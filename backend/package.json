@@ -1,0 +1,30 @@
+{
+  "name": "naneka-backend",
+  "version": "1.0.0",
+  "description": "Naneka e-commerce platform — Node.js/Express API",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "migrate": "node db/migrate.js"
+  },
+  "dependencies": {
+    "@imgly/background-removal-node": "^1.4.5",
+    "axios": "^1.7.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^5.0.1",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^2.1.1",
+    "pg": "^8.12.0",
+    "sharp": "^0.34.5",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}

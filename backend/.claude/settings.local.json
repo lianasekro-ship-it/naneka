@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \":*)",
+      "Bash(node:*)",
+      "Bash(find /workspaces/codespaces-blank/naneka-platform/backend/src -type f \\\\\\(-name *.js -o -name *.json \\\\\\))",
+      "Bash(find /workspaces/codespaces-blank/naneka-platform/frontend -maxdepth 2 \\\\\\(-name package.json -o -name vite.config.* -o -name .env* \\\\\\))",
+      "Bash(curl:*)",
+      "Bash(PGPASSWORD=changeme psql -h localhost -p 5432 -U naneka_user -d naneka -f /workspaces/codespaces-blank/naneka-platform/db/migrations/010_jumia_features.sql 2>&1)",
+      "Bash(pg_isready)",
+      "Bash(docker exec:*)",
+      "Bash(1:*)",
+      "Bash(docker cp:*)",
+      "Bash(node -e \"const j=JSON.parse\\(require\\(''''fs''''\\).readFileSync\\(''''/dev/stdin'''',''''utf8''''\\)\\); console.log\\(''''sections:'''', j.sections?.length\\); j.sections?.forEach\\(s=>console.log\\('''' -'''', s.title, ''''| products:'''', s.products?.length, ''''| rule:'''', JSON.stringify\\(s.algorithmic_rule\\)\\)\\);\" 2)",
+      "Bash(node -e \"const j=JSON.parse\\(require\\(''''fs''''\\).readFileSync\\(''''/dev/stdin'''',''''utf8''''\\)\\); console.log\\(''''categories:'''', j.categories?.length\\); j.categories?.forEach\\(c=>console.log\\('''' -'''', c.name, ''''| subs:'''', c.subcategories?.length\\)\\);\" 2)",
+      "Bash(node -e \"const j=JSON.parse\\(require\\(''''fs''''\\).readFileSync\\(''''/dev/stdin'''',''''utf8''''\\)\\); console.log\\(''''total:'''', j.total, ''''| returned:'''', j.products?.length\\); j.products?.slice\\(0,2\\).forEach\\(p=>console.log\\('''' -'''', p.name, ''''| is_active:'''', p.is_active\\)\\);\" 2)",
+      "Bash(__NEW_LINE_48d7c0872055f65a__ docker exec naneka_db psql -U naneka_user -d naneka -c \":*)",
+      "Bash(docker ps:*)",
+      "Bash(pkill -f \"node src/server.js\")",
+      "Bash(PHONE_ID=\"c0000000-0000-0000-0000-000000000001\")"
+    ]
+  }
+}
