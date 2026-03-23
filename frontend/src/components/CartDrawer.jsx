@@ -15,13 +15,13 @@ export default function CartDrawer({ onCheckout }) {
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop — above the bottom nav (480) so the drawer feels modal */}
       <div
         onClick={() => setDrawerOpen(false)}
         style={{
           position: 'fixed', inset: 0,
           background: 'rgba(26,26,26,0.6)',
-          zIndex: 200, animation: 'fadeIn 0.2s ease',
+          zIndex: 500, animation: 'fadeIn 0.2s ease',
         }}
       />
 
@@ -29,7 +29,7 @@ export default function CartDrawer({ onCheckout }) {
       <div style={{
         position: 'fixed', top: 0, right: 0, bottom: 0,
         width: 'min(440px, 100vw)',
-        background: '#fff', zIndex: 201,
+        background: '#fff', zIndex: 501,
         display: 'flex', flexDirection: 'column',
         boxShadow: '-10px 0 50px rgba(0,0,0,0.25)',
         animation: 'slideInRight 0.28s cubic-bezier(0.32,0.72,0,1)',

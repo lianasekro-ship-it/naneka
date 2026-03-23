@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useCart } from '../context/CartContext.jsx';
 
 export const CATEGORIES = [
@@ -173,57 +174,64 @@ function MobileDrawer({ open, onClose, onNavigate }) {
 }
 
 /* ─── Mobile bottom nav bar ──────────────────────────────────────────────── */
-export function MobileBottomNav({ onOpenCategories }) {
-  const { count, setDrawerOpen } = useCart();
+// categoriesOpen — boolean passed from MegaSidebar so the tab reflects drawer state
+export function MobileBottomNav({ onOpenCategories, categoriesOpen = false }) {
+  const { count, drawerOpen: cartOpen, setDrawerOpen } = useCart();
+  const navigate  = useNavigate();
+  const { pathname } = useLocation();
+
+  // Active rules:
+  //  • Home       → user is on "/" and neither overlay is open
+  //  • Categories → category drawer is open
+  //  • Cart       → cart drawer is open
+  const homeActive = pathname === '/' && !categoriesOpen && !cartOpen;
+  const catActive  = categoriesOpen;
+  const cartActive = cartOpen;
+
+  // Shared tab button style — active tab gets the brand gold top-border + gold text
+  function tabStyle(isActive) {
+    return {
+      flex: 1,
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'center', gap: '0.2rem',
+      padding: '0.625rem 0.5rem',
+      border: 'none', background: 'none', cursor: 'pointer',
+      fontFamily: 'var(--font-sans)',
+      fontSize: '0.62rem', fontWeight: isActive ? 700 : 600,
+      letterSpacing: '0.04em', textTransform: 'uppercase',
+      color: isActive ? 'var(--c-gold)' : 'var(--c-text-muted)',
+      borderTop: `2px solid ${isActive ? 'var(--c-gold)' : 'transparent'}`,
+      transition: 'color 0.15s, border-color 0.15s',
+    };
+  }
+
   return (
     <nav className="mobile-bottom-nav" style={{
       position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 480,
       background: '#fff', borderTop: '1px solid var(--c-border)',
-      display: 'none', /* shown via CSS on mobile */
+      display: 'none', /* shown via CSS media query on ≤900px */
       alignItems: 'stretch', justifyContent: 'space-around',
       boxShadow: '0 -4px 24px rgba(0,0,0,0.09)',
       paddingBottom: 'env(safe-area-inset-bottom)',
     }}>
-      {/* Home */}
-      <a
-        href="/"
-        style={{
-          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', gap: '0.2rem',
-          padding: '0.625rem 0.5rem', textDecoration: 'none', color: 'var(--c-text-muted)',
-          fontSize: '0.62rem', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase',
-          fontFamily: 'var(--font-sans)',
-        }}
-      >
+
+      {/* ── Home ── */}
+      <button onClick={() => navigate('/')} style={tabStyle(homeActive)} aria-label="Home">
         <span style={{ fontSize: '1.3rem', lineHeight: 1 }}>🏠</span>
         Home
-      </a>
+      </button>
 
-      {/* Categories — gold accent */}
-      <button
-        onClick={onOpenCategories}
-        style={{
-          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', gap: '0.2rem',
-          padding: '0.625rem 0.5rem', border: 'none', background: 'none', cursor: 'pointer',
-          fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
-          color: 'var(--c-gold)', fontFamily: 'var(--font-sans)', borderTop: '2px solid var(--c-gold)',
-        }}
-      >
+      {/* ── Categories ── */}
+      <button onClick={onOpenCategories} style={tabStyle(catActive)} aria-label="Categories">
         <span style={{ fontSize: '1.3rem', lineHeight: 1 }}>☰</span>
         Categories
       </button>
 
-      {/* Cart */}
+      {/* ── Cart ── */}
       <button
         onClick={() => setDrawerOpen(true)}
-        style={{
-          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', gap: '0.2rem',
-          padding: '0.625rem 0.5rem', border: 'none', background: 'none', cursor: 'pointer',
-          fontSize: '0.62rem', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase',
-          color: 'var(--c-text-muted)', fontFamily: 'var(--font-sans)', position: 'relative',
-        }}
+        style={{ ...tabStyle(cartActive), position: 'relative' }}
+        aria-label="Cart"
       >
         <span style={{ fontSize: '1.3rem', lineHeight: 1, position: 'relative' }}>
           🛒
@@ -241,13 +249,20 @@ export function MobileBottomNav({ onOpenCategories }) {
         </span>
         Cart
       </button>
+
     </nav>
   );
 }
 
 /* ─── Main export ────────────────────────────────────────────────────────── */
-export default function MegaSidebar({ onNavigate }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+// Accepts optional drawerOpen / onOpenDrawer / onCloseDrawer so a parent can
+// control the mobile category drawer (e.g. to wire up an external hamburger).
+// Falls back to internal state when those props are not provided.
+export default function MegaSidebar({ onNavigate, drawerOpen, onOpenDrawer, onCloseDrawer }) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const mobileOpen   = drawerOpen   !== undefined ? drawerOpen   : internalOpen;
+  const openDrawer   = onOpenDrawer  ?? (() => setInternalOpen(true));
+  const closeDrawer  = onCloseDrawer ?? (() => setInternalOpen(false));
 
   return (
     <>
@@ -267,12 +282,12 @@ export default function MegaSidebar({ onNavigate }) {
       </aside>
 
       {/* Mobile bottom bar — shown via .mobile-bottom-nav CSS at ≤900px */}
-      <MobileBottomNav onOpenCategories={() => setMobileOpen(true)} />
+      <MobileBottomNav onOpenCategories={openDrawer} categoriesOpen={mobileOpen} />
 
       {/* Mobile slide-up drawer */}
       <MobileDrawer
         open={mobileOpen}
-        onClose={() => setMobileOpen(false)}
+        onClose={closeDrawer}
         onNavigate={onNavigate}
       />
     </>

@@ -32,6 +32,10 @@ export default function Storefront() {
   const [toast,            setToast]            = useState(null);
   const [dynamicSections,  setDynamicSections]  = useState(null); // null → use static fallback
   const [hiddenIds,        setHiddenIds]        = useState(new Set());
+  // Shared state for the mobile category drawer — controlled here so that
+  // both the SiteHeader hamburger and the MobileBottomNav Categories button
+  // open the exact same drawer.
+  const [mobileCatOpen, setMobileCatOpen] = useState(false);
 
   // Fetch active sections and product visibility from API (silently falls back if unavailable)
   useEffect(() => {
@@ -90,14 +94,20 @@ export default function Storefront() {
     <>
       <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column' }}>
         <TopUtilityBar />
-        <SiteHeader />
+        <SiteHeader onOpenCategories={() => setMobileCatOpen(true)} />
         <CategoryMegaBar onScrollTo={scrollTo} />
 
         {/* Sidebar + content wrapper */}
         <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1 }}>
-          <MegaSidebar onNavigate={handleSidebarNav} />
+          <MegaSidebar
+            onNavigate={handleSidebarNav}
+            drawerOpen={mobileCatOpen}
+            onOpenDrawer={() => setMobileCatOpen(true)}
+            onCloseDrawer={() => setMobileCatOpen(false)}
+          />
 
-          <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Extra bottom padding keeps the last row of cards above the fixed bottom nav */}
+          <div style={{ flex: 1, minWidth: 0, paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
             <HeroSection onShopNow={() => scrollTo('best-sellers')} onBulk={() => scrollTo('bulk-deals')} />
 
             {/* Dynamic sections from API, or static fallback.
@@ -186,7 +196,7 @@ function TopUtilityBar() {
           Delivering to: <strong style={{ color: 'rgba(255,255,255,0.8)' }}>Dar es Salaam</strong>
         </span>
         <div style={{ display: 'flex', gap: '1.5rem' }}>
-          {[['/track', 'Track Order'], ['/driver', 'Driver Portal'], ['/admin', 'Admin']].map(([h, l]) => (
+          {[['/track', 'Track Order']].map(([h, l]) => (
             <a key={l} href={h} style={{ color: 'rgba(255,255,255,0.5)', textDecoration: 'none', transition: 'color 0.15s' }}
               onMouseEnter={e => (e.currentTarget.style.color = 'var(--c-gold)')}
               onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.5)')}>
@@ -315,24 +325,66 @@ function LiveSearchBar() {
 }
 
 /* ─── Main Header ─────────────────────────────────────────────────────────── */
-function SiteHeader() {
+function SiteHeader({ onOpenCategories }) {
   const { count, setDrawerOpen } = useCart();
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+
   return (
     <header className="page-header" style={{ borderBottom: '1px solid var(--c-border)' }}>
-      <div className="container" style={{ display: 'flex', alignItems: 'center', padding: '0.875rem 1.5rem', gap: '1.5rem' }}>
-        <NanekaLogo />
-        <LiveSearchBar />
-        {/* Cart icon */}
-        <button onClick={() => setDrawerOpen(true)} style={{ position: 'relative', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem', padding: '0.25rem 0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
-          <span style={{ fontSize: '1.5rem', lineHeight: 1 }}>🛒</span>
+      {/* ── Single compact row: Hamburger | Logo | Search | Cart ── */}
+      <div className="flex items-center gap-2 px-3 py-2 md:px-6 md:py-3 md:gap-4 max-w-[1140px] mx-auto w-full">
+
+        {/* Hamburger — mobile only, calls the shared state lifted to Storefront */}
+        <button
+          className="flex md:hidden flex-col justify-center items-center gap-[5px] p-1.5 rounded shrink-0"
+          aria-label="Menu"
+          onClick={onOpenCategories}
+        >
+          <span className="block w-5 h-[2px] bg-[#1A1A1A]" />
+          <span className="block w-5 h-[2px] bg-[#1A1A1A]" />
+          <span className="block w-5 h-[2px] bg-[#1A1A1A]" />
+        </button>
+
+        {/* Logo — always visible */}
+        <div className="shrink-0">
+          <NanekaLogo />
+        </div>
+
+        {/* Search — full width on md+, collapsed icon on mobile */}
+        <div className="hidden md:flex flex-1">
+          <LiveSearchBar />
+        </div>
+        <button
+          className="flex md:hidden items-center justify-center p-1.5 shrink-0"
+          aria-label="Search"
+          onClick={() => setMobileSearchOpen(v => !v)}
+        >
+          <span className="text-xl">🔍</span>
+        </button>
+
+        {/* Cart — always visible */}
+        <button
+          onClick={() => setDrawerOpen(true)}
+          className="relative flex flex-col items-center gap-0.5 p-1 shrink-0"
+          aria-label="Cart"
+        >
+          <span className="text-2xl leading-none">🛒</span>
           {count > 0 && (
-            <span style={{ position: 'absolute', top: '-2px', right: '-2px', background: 'var(--c-gold)', color: '#fff', fontSize: '0.6rem', fontWeight: 700, width: '18px', height: '18px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center w-[18px] h-[18px] rounded-full text-[10px] font-bold text-white"
+              style={{ background: 'var(--c-gold)', fontSize: '0.6rem' }}>
               {count > 9 ? '9+' : count}
             </span>
           )}
-          <span style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--c-text-muted)', letterSpacing: '0.05em' }}>Cart</span>
+          <span className="text-[10px] font-semibold tracking-wide hidden md:block" style={{ color: 'var(--c-text-muted)' }}>Cart</span>
         </button>
       </div>
+
+      {/* Mobile search row — slides in below the main bar */}
+      {mobileSearchOpen && (
+        <div className="flex md:hidden px-3 pb-2">
+          <LiveSearchBar />
+        </div>
+      )}
     </header>
   );
 }
@@ -808,7 +860,7 @@ function SiteFooter() {
         </div>
         <div>
           <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--c-gold)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.875rem' }}>Help</div>
-          {[['/track', 'Track Order'], ['/driver', 'Driver Portal'], ['/admin', 'Admin Dashboard'], ['/studio', 'Studio']].map(([h, l]) => <a key={l} href={h} style={{ display: 'block', fontSize: '0.84rem', color: 'rgba(255,255,255,0.4)', marginBottom: '0.5rem', textDecoration: 'none', transition: 'color 0.15s' }} onMouseEnter={e => (e.currentTarget.style.color = 'var(--c-gold)')} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}>{l}</a>)}
+          {[['/track', 'Track Order']].map(([h, l]) => <a key={l} href={h} style={{ display: 'block', fontSize: '0.84rem', color: 'rgba(255,255,255,0.4)', marginBottom: '0.5rem', textDecoration: 'none', transition: 'color 0.15s' }} onMouseEnter={e => (e.currentTarget.style.color = 'var(--c-gold)')} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}>{l}</a>)}
         </div>
       </div>
       <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', maxWidth: '1140px', margin: '0 auto' }}>
