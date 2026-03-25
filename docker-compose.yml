@@ -37,5 +37,20 @@ services:
       - ./frontend:/app
       - /app/node_modules
 
+  waha:
+    image: devlikeapro/waha
+    container_name: naneka_waha
+    restart: unless-stopped
+    ports:
+      - '3001:3000'
+    environment:
+      WHATSAPP_API_KEY: Naneka_RsHP2pA9a_32n3ObL5Y_dZRe
+      WHATSAPP_HOOK_URL: https://naneka-backend.vercel.app/webhooks/waha
+      WHATSAPP_HOOK_EVENTS: message,session.status
+      WHATSAPP_DEFAULT_ENGINE: WEBJS
+    volumes:
+      - naneka_waha_data:/app/.waha/sessions
+
 volumes:
   naneka_pgdata:
+  naneka_waha_data:

@@ -90,7 +90,10 @@ export const env = {
   WAHA_BASE_URL:               process.env.WAHA_BASE_URL,
   WAHA_API_KEY:                process.env.WAHA_API_KEY,
   WAHA_SESSION:                process.env.WAHA_SESSION || 'default',
-  WAHA_GROUP_ID:               process.env.WAHA_GROUP_ID || '',       // e.g. "120363xxxxxxxxxx@g.us"
+  // Group ID discovered 2026-03-25 from live WAHA session (Naneka Orders group).
+  // Env var takes priority; fallback ensures notifications work even if Vercel
+  // env var is not yet set.
+  WAHA_GROUP_ID:               process.env.WAHA_GROUP_ID || '120363426161190613@g.us',
   WAHA_ADMIN_PHONE:            process.env.WAHA_ADMIN_PHONE || '',    // legacy fallback
 
   // Textbee
