@@ -3,9 +3,9 @@ node_modules/
 backend/node_modules/
 frontend/node_modules/
 
-# Build output
-frontend/dist/
+# Build output — backend dist only; frontend/dist is committed for static Vercel deploy
 dist/
+backend/dist/
 
 # Environment files — never commit secrets or local overrides
 .env
