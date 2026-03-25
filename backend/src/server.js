@@ -64,7 +64,8 @@ app.use('/api/v1/admin',               adminRouter);
 
 app.use('/api',                priceCheckRouter);    // GET /api/price-check
 
-app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'naneka-backend', v: '2' }));
+// v3: VALID_STATUSES includes preparing + ready_for_pickup; ?status= filter on /orders
+app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'naneka-backend', v: '3' }));
 
 // ─── WAHA Rescue Route ────────────────────────────────────────────────────────
 // Registered directly here (not via adminRouter) so it works even if admin.js
