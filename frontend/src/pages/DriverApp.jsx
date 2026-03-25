@@ -59,8 +59,8 @@ export default function DriverApp() {
   const fetchOrders = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     try {
-      // /pending returns only actionable orders — paid, processing, out_for_delivery, pending_payment
-      const { data } = await api.get('/api/v1/orders/pending', { headers: authHeaders });
+      // Use ?status= filter on the main list endpoint — avoids route mis-match on older deployments
+      const { data } = await api.get('/api/v1/orders?status=ready_for_pickup,out_for_delivery&limit=200', { headers: authHeaders });
       setOrders(data.orders ?? []);
       setLastSync(new Date());
       setError(null);

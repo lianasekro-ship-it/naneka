@@ -1197,12 +1197,14 @@ function PreparerPanel({ refreshKey = 0 }) {
   const fetchOrders = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     try {
-      const { data } = await api.get('/api/v1/orders/preparing');
+      // Use the stable ?status= filter on the main list endpoint — avoids route-matching
+      // issues where /preparing could be mis-matched as /:id on older deployments.
+      const { data } = await api.get('/api/v1/orders?status=pending_payment,paid,preparing&limit=200');
       setOrders(data.orders ?? []);
       setLastUpdated(new Date());
       setError(null);
     } catch (err) {
-      setError(err.response?.data?.error?.message ?? err.message ?? 'Failed to load.');
+      setError(err.response?.data?.error?.message ?? err.message ?? 'Imeshindwa kupakia oda.');
     } finally {
       setLoading(false);
       if (manual) setRefreshing(false);
@@ -1280,8 +1282,8 @@ function PreparerPanel({ refreshKey = 0 }) {
         {!loading && !error && orders.length === 0 && (
           <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--c-text-muted)' }}>
             <div style={{ fontSize: '3rem', marginBottom: '0.75rem' }}>✅</div>
-            <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.0625rem', color: 'var(--c-text)', marginBottom: '0.375rem' }}>Queue Clear!</p>
-            <p style={{ fontSize: '0.875rem' }}>No orders to prepare right now.</p>
+            <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.0625rem', color: 'var(--c-text)', marginBottom: '0.375rem' }}>Hakuna oda mpya kwa sasa</p>
+            <p style={{ fontSize: '0.875rem' }}>Oda mpya zitaonekana hapa mara zinapopokelewa.</p>
           </div>
         )}
 

@@ -157,28 +157,43 @@ async function resolveOrder(idOrCode) {
 
 // ─── GET /api/v1/orders ───────────────────────────────────────────────────────
 /**
- * List all orders (admin view).
- * Reads from PostgreSQL (primary). Falls back to localStore if DB is down.
+ * List orders. Supports ?status= filter (comma-separated) for role-specific views.
+ * Examples:
+ *   GET /api/v1/orders                                  → all orders (admin)
+ *   GET /api/v1/orders?status=pending_payment,paid,preparing  → preparer queue
+ *   GET /api/v1/orders?status=ready_for_pickup,out_for_delivery → driver queue
  */
 export async function listOrders(req, res, next) {
   try {
-    const page   = Math.max(1, parseInt(req.query.page  ?? '1',   10));
-    const limit  = Math.min(200, Math.max(1, parseInt(req.query.limit ?? '100', 10)));
-    const offset = (page - 1) * limit;
+    const page         = Math.max(1, parseInt(req.query.page  ?? '1',   10));
+    const limit        = Math.min(200, Math.max(1, parseInt(req.query.limit ?? '100', 10)));
+    const offset       = (page - 1) * limit;
+    // Optional status filter — comma-separated list of valid statuses
+    const statusFilter = req.query.status
+      ? req.query.status.split(',').map(s => s.trim()).filter(s => VALID_STATUSES.includes(s))
+      : null;
 
     let orders = [];
     let total  = 0;
 
     try {
-      const result = await dbListOrders({ limit, offset });
-      orders = (result.rows ?? []).map(normaliseDbOrder);
-      total  = result.total ?? orders.length;
+      if (statusFilter && statusFilter.length > 0) {
+        // Filtered query — use the statuses list helper (no offset pagination for these views)
+        orders = (await dbListByStatuses(statusFilter, { limit })).map(normaliseDbOrder);
+        total  = orders.length;
+      } else {
+        const result = await dbListOrders({ limit, offset });
+        orders = (result.rows ?? []).map(normaliseDbOrder);
+        total  = result.total ?? orders.length;
+      }
     } catch (dbErr) {
       console.warn('[orders] DB list failed:', dbErr.message);
       if (IS_SERVERLESS) throw dbErr; // propagate to 500 handler — no FS on Vercel
       const all = await readOrders();
       total     = all.length;
-      orders    = all.slice(offset, offset + limit);
+      orders    = statusFilter
+        ? all.filter(o => statusFilter.includes(o.status)).slice(0, limit)
+        : all.slice(offset, offset + limit);
     }
 
     return res.status(200).json({
@@ -389,11 +404,12 @@ export async function createOrder(req, res, next) {
       }));
     }
 
-    // 7. Sheets sync (fire-and-forget)
+    // 8. Sheets sync (fire-and-forget)
     syncToSheets({
       orderNumber:     orderId.slice(0, 8).toUpperCase(),
       createdAt:       orderFlat.created_at,
       customerName:    orderFlat.customer_name,
+      customerPhone:   orderFlat.customer_phone,
       total:           orderFlat.total,
       deliveryAddress: orderFlat.delivery_address,
       status:          orderFlat.status,
