@@ -492,12 +492,14 @@ export async function updateOrderStatus(req, res, next) {
     }
 
     // Primary update in DB
-    let updated = null;
+    let updated   = null;
+    let dbError   = null;
     try {
       const dbRow = await dbUpdateStatus(req.params.id, status);
       updated = normaliseDbOrder(dbRow);
     } catch (dbErr) {
-      console.warn(`[orders] DB status update failed for ${req.params.id}: ${dbErr.message}`);
+      dbError = dbErr;
+      console.error(`[orders] DB status update failed for ${req.params.id}: ${dbErr.message}`);
     }
 
     // Mirror update to localStore only in local dev (Vercel FS is read-only)
@@ -507,7 +509,11 @@ export async function updateOrderStatus(req, res, next) {
 
     // Use whichever succeeded
     const result = updated ?? localUpdated;
-    if (!result) return next(createError(404, 'Order not found.'));
+    if (!result) {
+      // Propagate real DB error so the frontend shows "invalid enum" etc. instead of 404
+      if (dbError) return next(createError(500, `Status update failed: ${dbError.message}`));
+      return next(createError(404, 'Order not found.'));
+    }
 
     // Sync every status change to Google Sheets
     syncToSheets({

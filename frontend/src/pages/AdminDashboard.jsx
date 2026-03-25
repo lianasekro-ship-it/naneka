@@ -1229,8 +1229,8 @@ function PreparerPanel({ refreshKey = 0 }) {
       }
     } catch (err) {
       const msg = err.response?.status === 401 || err.response?.status === 403
-        ? 'Not authorised. Paste your token in the Driver App → Token button and reload.'
-        : err.response?.data?.message ?? 'Update failed. Try again.';
+        ? 'Not authorised. Paste your staff JWT token above.'
+        : (err.response?.data?.error?.message ?? err.response?.data?.message ?? err.message ?? 'Update failed. Try again.');
       setActionErr(e => ({ ...e, [orderId]: msg }));
     } finally {
       setBusy(b => ({ ...b, [orderId]: false }));
@@ -1558,11 +1558,11 @@ function BackendStatus() {
 // ══════════════════════════════════════════════════════════════════════════════
 // ROOT COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
-export default function AdminDashboard() {
+export default function AdminDashboard({ defaultTab = 'orders' }) {
   const { signOut } = useAuth();
   const navigate    = useNavigate();
 
-  const [activeTab,    setActiveTab]    = useState('orders');
+  const [activeTab,    setActiveTab]    = useState(defaultTab);
   const [refreshKey,   setRefreshKey]   = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 

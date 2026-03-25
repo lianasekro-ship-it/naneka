@@ -74,6 +74,9 @@ function AppShell() {
         <Route path="/admin/sales" element={
           <ProtectedRoute><SalesDashboard /></ProtectedRoute>
         } />
+        <Route path="/preparer" element={
+          <ProtectedRoute><AdminDashboard defaultTab="preparer" /></ProtectedRoute>
+        } />
         <Route path="/driver" element={
           <ProtectedRoute><DriverApp /></ProtectedRoute>
         } />

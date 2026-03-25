@@ -26,12 +26,14 @@ function safeMsg(err, fallback = 'Something went wrong. Please try again.') {
 }
 
 const STATUS_META = {
-  pending_payment:  { label: 'Awaiting Payment', icon: '⏳', color: '#B7770D',  bg: '#FEF3C7' },
-  paid:             { label: 'Payment Confirmed', icon: '✓',  color: '#1D4ED8',  bg: '#DBEAFE' },
-  processing:       { label: 'Preparing Order',   icon: '📦', color: '#6D28D9',  bg: '#EDE9FE' },
-  out_for_delivery: { label: 'Out for Delivery',  icon: '🚚', color: '#0891B2',  bg: '#CFFAFE' },
-  delivered:        { label: 'Delivered',          icon: '🎉', color: '#065F46',  bg: '#D1FAE5' },
-  cancelled:        { label: 'Cancelled',          icon: '✕',  color: '#991B1B',  bg: '#FEE2E2' },
+  pending_payment:  { label: 'Awaiting Payment',   icon: '⏳', color: '#B7770D',  bg: '#FEF3C7' },
+  paid:             { label: 'Payment Confirmed',   icon: '✓',  color: '#1D4ED8',  bg: '#DBEAFE' },
+  preparing:        { label: 'Preparing Your Order',icon: '👨‍🍳', color: '#6D28D9',  bg: '#EDE9FE' },
+  ready_for_pickup: { label: 'Ready — Driver Notified', icon: '📦', color: '#0369A1', bg: '#E0F2FE' },
+  processing:       { label: 'Preparing Order',     icon: '📦', color: '#6D28D9',  bg: '#EDE9FE' },
+  out_for_delivery: { label: 'Out for Delivery',    icon: '🚚', color: '#0891B2',  bg: '#CFFAFE' },
+  delivered:        { label: 'Delivered',            icon: '🎉', color: '#065F46',  bg: '#D1FAE5' },
+  cancelled:        { label: 'Cancelled',            icon: '✕',  color: '#991B1B',  bg: '#FEE2E2' },
 };
 
 const POLL_MS = 30_000;

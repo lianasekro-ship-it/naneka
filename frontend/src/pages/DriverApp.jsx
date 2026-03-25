@@ -91,7 +91,7 @@ export default function DriverApp() {
     } catch (err) {
       const msg = err.response?.status === 401 || err.response?.status === 403
         ? 'Not authorised. Check your token.'
-        : err.response?.data?.message ?? 'Update failed. Try again.';
+        : (err.response?.data?.error?.message ?? err.response?.data?.message ?? err.message ?? 'Update failed. Try again.');
       setActionErr(e => ({ ...e, [orderId]: msg }));
     } finally {
       setBusy(b => ({ ...b, [orderId]: false }));

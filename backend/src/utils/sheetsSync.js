@@ -57,27 +57,31 @@ export async function syncProductToSheets(product) {
  */
 export async function syncToSheets(order) {
   const payload = {
+    type:            'order',              // Apps Script uses this to route to the Orders sheet
     orderNumber:     order.orderNumber,
     createdAt:       order.createdAt,
     customerName:    order.customerName,
-    customerPhone:   order.customerPhone ?? null,
+    customerPhone:   order.customerPhone  ?? null,
     total:           order.total,
-    deliveryAddress: order.deliveryAddress,
+    deliveryAddress: order.deliveryAddress ?? null,
     status:          order.status,
   };
 
   if (!SHEETS_URL) {
-    console.warn('[sheetsSync] GOOGLE_SHEETS_URL is not set — skipping sync.');
+    console.warn('[sheetsSync] GOOGLE_SHEETS_URL is not set in environment — order sync skipped. Set GOOGLE_SHEETS_URL in Vercel env vars.');
     return;
   }
 
   try {
-    await axios.post(SHEETS_URL, payload, {
+    const res = await axios.post(SHEETS_URL, payload, {
       headers: { 'Content-Type': 'application/json' },
-      timeout: 8000,
+      timeout: 10000,
+      maxRedirects: 5, // Google Apps Script exec endpoints redirect once
     });
-    console.log(`[sheetsSync] Synced order ${payload.orderNumber} to Google Sheets:`, payload.customerName);
+    console.log(`[sheetsSync] ✓ Synced order ${payload.orderNumber} (status: ${payload.status}) — HTTP ${res.status}`);
   } catch (err) {
-    console.error('[sheetsSync] Failed to sync order to Google Sheets:', err.message);
+    const status = err.response?.status;
+    const detail = err.response?.data ?? err.message;
+    console.error(`[sheetsSync] ✗ Order sync failed (HTTP ${status ?? 'network'}): ${JSON.stringify(detail).slice(0, 200)}`);
   }
 }

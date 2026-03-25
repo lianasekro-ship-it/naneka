@@ -169,7 +169,7 @@ export async function notifyAdminNewOrder(order) {
     `📍 *Address:* ${order.deliveryAddress}`,
     order.notes ? `📝 *Notes:* ${order.notes}` : null,
     '',
-    `🔗 Admin Panel → https://naneka.co.tz/admin`,
+    `🔗 Preparer Queue → https://naneka.co.tz/preparer`,
   ].filter(line => line !== null).join('\n');
 
   try {
