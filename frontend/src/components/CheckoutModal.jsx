@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import axios from 'axios';
+import api from '../lib/api.js';
 
 const DELIVERY_FEE = 3_500;
 const CURRENCY     = 'TZS';
@@ -102,6 +102,14 @@ const PAYMENT_METHODS = [
   { value: 'card',         label: 'Debit / Credit',  sub: 'Visa · Mastercard · Flutterwave', icon: '💳' },
 ];
 
+function WAIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+    </svg>
+  );
+}
+
 const EMPTY_FORM = {
   customerName: '', customerPhone: '', customerEmail: '', orderNotes: '',
   deliveryInstructions: '',
@@ -157,7 +165,11 @@ function StepIndicator({ current }) {
 }
 
 /* ─── CheckoutModal ────────────────────────────────────────────────────────── */
-export default function CheckoutModal({ product, onClose }) {
+// mode: 'checkout' (default) — payment flow via Flutterwave
+//       'whatsapp'           — order sent to admin via WAHA, then /order-confirmed
+export default function CheckoutModal({ product, onClose, mode = 'checkout' }) {
+  const isWhatsApp = mode === 'whatsapp';
+
   const [step,         setStep]         = useState(1);
   const [addressTab,   setAddressTab]   = useState('napa');
   const [locState,     setLocState]     = useState('locating');
@@ -166,7 +178,7 @@ export default function CheckoutModal({ product, onClose }) {
   const [manualQuery,  setManualQuery]  = useState('');
   const [geocoding,    setGeocoding]    = useState(false);
   const [geocodeError, setGeocodeError] = useState(null);
-  const [form,         setForm]         = useState(EMPTY_FORM);
+  const [form,         setForm]         = useState({ ...EMPTY_FORM, paymentMethod: isWhatsApp ? 'whatsapp' : 'mobile_money' });
   const [errors,       setErrors]       = useState({});
   const [submitting,   setSubmitting]   = useState(false);
   const [submitError,  setSubmitError]  = useState(null);
@@ -255,11 +267,11 @@ export default function CheckoutModal({ product, onClose }) {
     }
 
     const deliveryAddress = composeDeliveryAddress(addressTab, form, resolvedCoords);
-    const subtotal = product.price;
+    const subtotal = Number(product.price);
     const total    = subtotal + DELIVERY_FEE;
 
     try {
-      const { data } = await axios.post('/api/v1/orders', {
+      const { data } = await api.post('/api/v1/orders', {
         customerName:  form.customerName.trim(),
         customerPhone: form.customerPhone.trim(),
         customerEmail: form.customerEmail.trim() || undefined,
@@ -268,10 +280,16 @@ export default function CheckoutModal({ product, onClose }) {
         longitude:     resolvedCoords.lng,
         paymentMethod: form.paymentMethod,
         subtotal, deliveryFee: DELIVERY_FEE, total, currency: CURRENCY,
-        notes: form.orderNotes.trim() || undefined,
+        notes:        form.orderNotes.trim() || undefined,
+        productName:  product?.name ?? undefined,
       });
       const redirectUrl = new URL(data.paymentLink);
-      window.location.href = window.location.origin + redirectUrl.pathname + redirectUrl.search;
+      let href = window.location.origin + redirectUrl.pathname + redirectUrl.search;
+      // For WhatsApp orders, pass name + total so OrderConfirmed can build the wa.me link
+      if (isWhatsApp) {
+        href += `&name=${encodeURIComponent(form.customerName.trim())}&total=${total}`;
+      }
+      window.location.href = href;
     } catch (err) {
       const data = err?.response?.data;
       let msg = 'Something went wrong. Please try again.';
@@ -283,7 +301,7 @@ export default function CheckoutModal({ product, onClose }) {
     }
   }
 
-  const subtotal = product?.price ?? 0;
+  const subtotal = Number(product?.price ?? 0);
   const total    = subtotal + DELIVERY_FEE;
 
   return (
@@ -375,52 +393,70 @@ export default function CheckoutModal({ product, onClose }) {
             </div>
           )}
 
-          {/* ══════════════════ STEP 3: PAYMENT ══════════════════════════ */}
+          {/* ══════════════════ STEP 3: PAYMENT / WHATSAPP ════════════════ */}
           {step === 3 && (
             <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <StepLabel icon="💳" title="Payment Method" sub="Select how you'd like to pay" />
 
-              {/* Payment method cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                {PAYMENT_METHODS.map(m => {
-                  const active = form.paymentMethod === m.value;
-                  return (
-                    <button
-                      key={m.value}
-                      type="button"
-                      onClick={() => handleChange({ target: { name: 'paymentMethod', value: m.value } })}
-                      style={{
-                        padding: '1rem', textAlign: 'left',
-                        border: `2px solid ${active ? 'var(--c-gold)' : 'var(--c-border)'}`,
-                        borderRadius: 'var(--radius)',
-                        background: active ? 'rgba(212,175,55,0.06)' : '#fff',
-                        cursor: 'pointer', transition: 'border-color 0.18s, background 0.18s',
-                        position: 'relative',
-                      }}
-                    >
-                      {active && (
-                        <span style={{
-                          position: 'absolute', top: '0.5rem', right: '0.5rem',
-                          width: '18px', height: '18px', borderRadius: '50%',
-                          background: 'var(--c-gold)', color: '#fff',
-                          fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontWeight: 700,
-                        }}>✓</span>
-                      )}
-                      <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>{m.icon}</div>
-                      <div style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--c-text)', marginBottom: '0.2rem' }}>{m.label}</div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--c-text-dim)' }}>{m.sub}</div>
-                    </button>
-                  );
-                })}
-              </div>
+              {isWhatsApp ? (
+                /* ── WhatsApp mode: confirm & send ───────────────────────── */
+                <>
+                  <StepLabel icon="📋" title="Confirm Your Order" sub="Review your details before sending" />
 
-              {/* Order summary */}
-              <div style={{
-                background: '#1A1A1A',
-                borderRadius: 'var(--radius)',
-                padding: '1.25rem 1.375rem',
-              }}>
+                  {/* WhatsApp notice */}
+                  <div style={{
+                    display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
+                    background: 'rgba(37,211,102,0.07)', border: '1.5px solid #25D366',
+                    borderRadius: 'var(--radius)', padding: '1rem',
+                  }}>
+                    <span style={{ color: '#25D366', flexShrink: 0, marginTop: '1px' }}><WAIcon size={20} /></span>
+                    <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--c-text)', lineHeight: 1.6 }}>
+                      Your order will be sent to our team on WhatsApp. We'll confirm availability and contact you to arrange delivery and payment.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                /* ── Standard checkout: payment method selector ──────────── */
+                <>
+                  <StepLabel icon="💳" title="Payment Method" sub="Select how you'd like to pay" />
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    {PAYMENT_METHODS.map(m => {
+                      const active = form.paymentMethod === m.value;
+                      return (
+                        <button
+                          key={m.value}
+                          type="button"
+                          onClick={() => handleChange({ target: { name: 'paymentMethod', value: m.value } })}
+                          style={{
+                            padding: '1rem', textAlign: 'left',
+                            border: `2px solid ${active ? 'var(--c-gold)' : 'var(--c-border)'}`,
+                            borderRadius: 'var(--radius)',
+                            background: active ? 'rgba(212,175,55,0.06)' : '#fff',
+                            cursor: 'pointer', transition: 'border-color 0.18s, background 0.18s',
+                            position: 'relative',
+                          }}
+                        >
+                          {active && (
+                            <span style={{
+                              position: 'absolute', top: '0.5rem', right: '0.5rem',
+                              width: '18px', height: '18px', borderRadius: '50%',
+                              background: 'var(--c-gold)', color: '#fff',
+                              fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontWeight: 700,
+                            }}>✓</span>
+                          )}
+                          <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>{m.icon}</div>
+                          <div style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--c-text)', marginBottom: '0.2rem' }}>{m.label}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--c-text-dim)' }}>{m.sub}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {/* Order summary — shown in both modes */}
+              <div style={{ background: '#1A1A1A', borderRadius: 'var(--radius)', padding: '1.25rem 1.375rem' }}>
                 <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--c-gold)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '1rem' }}>
                   Order Summary
                 </div>
@@ -429,8 +465,6 @@ export default function CheckoutModal({ product, onClose }) {
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: '0.75rem', paddingTop: '0.875rem' }}>
                   <DarkSummaryRow label="Total" value={formatTZS(total)} bold />
                 </div>
-
-                {/* Customer + address recap */}
                 <div style={{ marginTop: '1rem', paddingTop: '0.875rem', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                   <RecapRow icon="👤" text={form.customerName} />
                   <RecapRow icon="📞" text={form.customerPhone} />
@@ -450,13 +484,29 @@ export default function CheckoutModal({ product, onClose }) {
                 </div>
               )}
 
-              <button type="submit" className="btn btn-gold btn-full" disabled={submitting}
-                style={{ padding: '1rem', fontSize: '0.9rem', letterSpacing: '0.04em' }}>
-                {submitting
-                  ? <><span className="spinner" /> Processing…</>
-                  : <>Pay {formatTZS(total)} →</>
-                }
-              </button>
+              {isWhatsApp ? (
+                <button type="submit" disabled={submitting}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.625rem',
+                    padding: '1rem', width: '100%', border: 'none', borderRadius: 'var(--radius-sm)',
+                    background: submitting ? '#9E9E9E' : '#25D366', color: '#fff',
+                    fontWeight: 700, fontSize: '0.9375rem', cursor: submitting ? 'not-allowed' : 'pointer',
+                    fontFamily: 'var(--font-sans)', letterSpacing: '0.02em', transition: 'background 0.18s',
+                  }}>
+                  {submitting
+                    ? <><span className="spinner" style={{ borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff' }} /> Sending…</>
+                    : <><WAIcon size={18} /> Send Order on WhatsApp</>
+                  }
+                </button>
+              ) : (
+                <button type="submit" className="btn btn-gold btn-full" disabled={submitting}
+                  style={{ padding: '1rem', fontSize: '0.9rem', letterSpacing: '0.04em' }}>
+                  {submitting
+                    ? <><span className="spinner" /> Processing…</>
+                    : <>Pay {formatTZS(total)} →</>
+                  }
+                </button>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <button type="button" onClick={() => setStep(2)} style={{
@@ -466,7 +516,7 @@ export default function CheckoutModal({ product, onClose }) {
                   ← Back
                 </button>
                 <p style={{ fontSize: '0.72rem', color: 'var(--c-text-dim)', letterSpacing: '0.02em' }}>
-                  Secured by Flutterwave · Data protected
+                  {isWhatsApp ? 'No payment required now · Pay on delivery' : 'Secured by Flutterwave · Data protected'}
                 </p>
               </div>
             </form>

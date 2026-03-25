@@ -296,4 +296,65 @@ router.delete('/products/:id', async (req, res, next) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// WAHA DIAGNOSTIC TOOL
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * GET /api/v1/admin/waha/groups?key=<WAHA_API_KEY>
+ *
+ * Proxies through to WAHA (using the server's WAHA_BASE_URL, which IS
+ * reachable from Vercel) and returns all WhatsApp groups the session is in.
+ *
+ * Usage: open in browser →
+ *   https://naneka-backend.vercel.app/api/v1/admin/waha/groups?key=<WAHA_API_KEY>
+ *
+ * Copy the "id" field from the group named "Naneka Orders" and set it as
+ * WAHA_GROUP_ID in your Vercel environment variables.
+ */
+router.get('/waha/groups', async (req, res, next) => {
+  const wahaBaseUrl = process.env.WAHA_BASE_URL;
+  const wahaApiKey  = process.env.WAHA_API_KEY;
+  const wahaSession = process.env.WAHA_SESSION || 'default';
+
+  if (!wahaBaseUrl || !wahaApiKey) {
+    return next(createError(503, 'WAHA_BASE_URL and WAHA_API_KEY are not configured on this server.'));
+  }
+
+  // Caller must pass the WAHA API key to access this endpoint
+  if (req.query.key !== wahaApiKey) {
+    return res.status(401).json({ error: 'Invalid key. Pass ?key=<WAHA_API_KEY>' });
+  }
+
+  try {
+    const url = `${wahaBaseUrl}/api/${wahaSession}/chats`;
+    const wahaRes = await fetch(url, {
+      headers: { 'X-Api-Key': wahaApiKey },
+      signal:  AbortSignal.timeout(10_000),
+    });
+
+    if (!wahaRes.ok) {
+      const detail = await wahaRes.text().catch(() => '');
+      return next(createError(502, `WAHA returned ${wahaRes.status}: ${detail}`));
+    }
+
+    const payload = await wahaRes.json();
+    const all     = Array.isArray(payload) ? payload : (payload.chats ?? []);
+    const groups  = all
+      .filter(c => (c.id || '').endsWith('@g.us'))
+      .map(g => ({
+        id:   g.id,
+        name: g.name ?? g.subject ?? '(unnamed)',
+      }));
+
+    return res.json({
+      groups,
+      total: groups.length,
+      next_step: 'Copy the "id" of your "Naneka Orders" group and add WAHA_GROUP_ID=<id> to Vercel env vars.',
+    });
+  } catch (err) {
+    return next(createError(502, `Could not reach WAHA at ${wahaBaseUrl}: ${err.message}. Is WAHA running and publicly accessible?`));
+  }
+});
+
 export default router;

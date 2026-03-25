@@ -1,17 +1,24 @@
 /**
  * orderController.js
  *
- * All order business logic lives here.
- * The route file (routes/orders.js) is a thin mapping of HTTP verbs → these handlers.
+ * Data flow for every WRITE (createOrder):
+ *   1. Validate → Geofence → Build order object
+ *   2. PRIMARY: write to Supabase via REST — authoritative record
+ *   3. FALLBACK (local dev only): if DB unreachable, write to data/orders.json
+ *      ── On Vercel (IS_SERVERLESS=true) this fallback is DISABLED because the
+ *         filesystem is read-only. A DB failure returns 503 instead.
+ *   4. Generate Flutterwave payment link
+ *   5. Sync to Google Sheets (fire-and-forget)
  *
- * Data flow for every write:
- *   1. Save to data/orders.json  ← PRIMARY (always succeeds, no DB required)
- *   2. Save to PostgreSQL        ← SECONDARY (fire-and-forget; failure is logged, not thrown)
- *   3. Sync to Google Sheets     ← TERTIARY (fire-and-forget; always after local save)
- *
- * Data flow for every read:
- *   1. Read from data/orders.json (fast, offline-capable)
+ * Data flow for every READ:
+ *   1. Try Supabase first (authoritative)
+ *   2. Fall back to localStore only in local dev (never on Vercel)
  */
+
+// ── Serverless guard ───────────────────────────────────────────────────────────
+// process.env.VERCEL is automatically set on all Vercel deployments.
+// Never attempt filesystem reads/writes in that environment.
+const IS_SERVERLESS = !!process.env.VERCEL;
 
 import { randomUUID } from 'crypto';
 import { z }          from 'zod';
@@ -22,12 +29,14 @@ import { createError } from '../middleware/errorHandler.js';
 import { isLocationDeliverable, validateDeliveryCoords } from '../services/geo/geofence.js';
 import { generateTxRef, initiatePayment }                from '../services/payments/flutterwave.js';
 import { pollAndUpdateDeliveryPosition }                 from '../services/logistics/traccar.js';
+import { notifyAdminNewOrder }                           from '../services/whatsapp/wahaService.js';
 
 import {
   createOrder          as dbCreateOrder,
   findOrderById        as dbFindById,
   findOrderByShortCode as dbFindByCode,
   updateOrderStatus    as dbUpdateStatus,
+  listOrders           as dbListOrders,
 } from '../models/order.js';
 import { findDeliveryByOrderId } from '../models/activeDelivery.js';
 import { syncToSheets }          from '../utils/sheetsSync.js';
@@ -50,18 +59,30 @@ const createOrderSchema = z.object({
   deliveryAddress:  z.string().min(5).max(500),
   latitude:         z.number().min(-90).max(90),
   longitude:        z.number().min(-180).max(180),
-  paymentMethod:    z.enum(['mobile_money', 'card']),
+  paymentMethod:    z.enum(['mobile_money', 'card', 'whatsapp']),
   subtotal:         z.number().positive(),
   deliveryFee:      z.number().min(0),
   total:            z.number().positive(),
   currency:         z.string().length(3).default('TZS'),
   notes:            z.string().max(500).optional(),
   deliveryZoneId:   z.string().uuid().optional(),
+  productName:      z.string().max(300).optional(),
 });
 
 const VALID_STATUSES = [
   'pending_payment', 'paid', 'processing', 'out_for_delivery', 'delivered', 'cancelled',
 ];
+
+/**
+ * Returns true only when the Flutterwave secret key is present and looks like
+ * a real key (FLWSECK_PROD-... or FLWSECK_TEST-...).
+ * Placeholder values ("FLWSECK-xxxx") and missing values both return false,
+ * so the payment step falls back gracefully instead of throwing a 401.
+ */
+function isFlutterwaveConfigured() {
+  const key = env.FLUTTERWAVE_SECRET_KEY;
+  return typeof key === 'string' && /^FLWSECK_(PROD|TEST)-/.test(key);
+}
 
 const UUID_RE     = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ORDER_NO_RE = /^[0-9a-f]{8}$/i;
@@ -69,26 +90,66 @@ const ORDER_NO_RE = /^[0-9a-f]{8}$/i;
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /**
- * Resolve a full UUID or 8-char order code to an order object.
- * Checks localStore first (fast, no DB round-trip needed).
+ * Normalise a DB row into the same flat shape that the localStore produces,
+ * so the rest of the codebase can treat both sources identically.
+ */
+function normaliseDbOrder(row) {
+  if (!row) return null;
+  return {
+    id:                  row.id,
+    order_number:        row.order_number,
+    customer_name:       row.customer_name,
+    customer_phone:      row.customer_phone,
+    customer_email:      row.customer_email    ?? null,
+    customer_whatsapp:   row.customer_whatsapp ?? null,
+    delivery_address:    row.delivery_address,
+    delivery_zone_id:    row.delivery_zone_id  ?? null,
+    status:              row.status,
+    payment_method:      row.payment_method,
+    payment_reference:   row.payment_reference ?? null,
+    payment_verified_at: row.payment_verified_at ?? null,
+    currency:            row.currency,
+    subtotal:            parseFloat(row.subtotal),
+    delivery_fee:        parseFloat(row.delivery_fee),
+    total:               parseFloat(row.total),
+    notes:               row.notes ?? null,
+    created_at:          row.created_at,
+    updated_at:          row.updated_at,
+  };
+}
+
+/**
+ * Resolve a full UUID or 8-char order code → order object.
+ * Tries DB first (authoritative), falls back to localStore.
  */
 async function resolveOrder(idOrCode) {
   if (UUID_RE.test(idOrCode)) {
-    const local = await localGetById(idOrCode);
-    if (local) return local;
-    return dbFindById(idOrCode).catch(() => null);
+    try {
+      const dbRow = await dbFindById(idOrCode);
+      if (dbRow) return normaliseDbOrder(dbRow);
+    } catch (err) {
+      console.warn('[orders] DB lookup failed:', err.message);
+      if (IS_SERVERLESS) return null;
+    }
+    return IS_SERVERLESS ? null : localGetById(idOrCode);
   }
   if (ORDER_NO_RE.test(idOrCode)) {
-    const local = await localGetByCode(idOrCode);
-    if (local) return local;
-    return dbFindByCode(idOrCode).catch(() => null);
+    try {
+      const dbRow = await dbFindByCode(idOrCode);
+      if (dbRow) return normaliseDbOrder(dbRow);
+    } catch (err) {
+      console.warn('[orders] DB lookup failed:', err.message);
+      if (IS_SERVERLESS) return null;
+    }
+    return IS_SERVERLESS ? null : localGetByCode(idOrCode);
   }
   return null;
 }
 
 // ─── GET /api/v1/orders ───────────────────────────────────────────────────────
 /**
- * List all orders (admin view). Reads from localStore — no DB required.
+ * List all orders (admin view).
+ * Reads from PostgreSQL (primary). Falls back to localStore if DB is down.
  */
 export async function listOrders(req, res, next) {
   try {
@@ -96,12 +157,24 @@ export async function listOrders(req, res, next) {
     const limit  = Math.min(200, Math.max(1, parseInt(req.query.limit ?? '100', 10)));
     const offset = (page - 1) * limit;
 
-    const all    = await readOrders();        // newest-first from localStore
-    const sliced = all.slice(offset, offset + limit);
+    let orders = [];
+    let total  = 0;
+
+    try {
+      const result = await dbListOrders({ limit, offset });
+      orders = (result.rows ?? []).map(normaliseDbOrder);
+      total  = result.total ?? orders.length;
+    } catch (dbErr) {
+      console.warn('[orders] DB list failed:', dbErr.message);
+      if (IS_SERVERLESS) throw dbErr; // propagate to 500 handler — no FS on Vercel
+      const all = await readOrders();
+      total     = all.length;
+      orders    = all.slice(offset, offset + limit);
+    }
 
     return res.status(200).json({
-      orders:     sliced,
-      pagination: { page, limit, total: all.length, pages: Math.ceil(all.length / limit) },
+      orders,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (err) {
     next(err);
@@ -109,13 +182,21 @@ export async function listOrders(req, res, next) {
 }
 
 // ─── GET /api/v1/orders/pending ───────────────────────────────────────────────
-/**
- * Orders the driver needs to act on. Only returns actionable statuses:
- * pending_payment, paid, processing, out_for_delivery.
- */
 export async function listPendingOrders(req, res, next) {
   try {
-    const orders = await readPendingOrders();
+    const PENDING = new Set(['pending_payment', 'paid', 'processing', 'out_for_delivery']);
+    let orders = [];
+
+    try {
+      const result = await dbListOrders({ limit: 200, offset: 0 });
+      orders = (result.rows ?? [])
+        .filter(r => PENDING.has(r.status))
+        .map(normaliseDbOrder);
+    } catch (dbErr) {
+      if (IS_SERVERLESS) throw dbErr;
+      orders = await readPendingOrders();
+    }
+
     return res.status(200).json({ orders, total: orders.length });
   } catch (err) {
     next(err);
@@ -125,21 +206,18 @@ export async function listPendingOrders(req, res, next) {
 // ─── POST /api/v1/orders ──────────────────────────────────────────────────────
 /**
  * Create a new order.
- * Step 1: Save to localStore (ALWAYS succeeds — this is the primary record).
- * Step 2: Try DB write (fire-and-forget — DB down must not fail the customer).
- * Step 3: Generate payment link.
- * Step 4: Sync to Google Sheets (fire-and-forget).
+ * PRIMARY: PostgreSQL. FALLBACK: localStore (for offline/dev resilience).
  */
 export async function createOrder(req, res, next) {
   try {
-    // 1. Validate input
+    // 1. Validate
     const parsed = createOrderSchema.safeParse(req.body);
     if (!parsed.success) {
       return next(createError(400, parsed.error.issues.map(i => i.message).join('; ')));
     }
     const body = parsed.data;
 
-    // 2a. Fast synchronous geofence pre-check (no DB required)
+    // 2a. Synchronous geofence pre-check (no DB needed)
     if (!isLocationDeliverable(body.latitude, body.longitude)) {
       return next(createError(422,
         "Sorry, we don't deliver to your area yet. " +
@@ -147,20 +225,45 @@ export async function createOrder(req, res, next) {
       ));
     }
 
-    // 2b. Authoritative PostGIS zone check — skip gracefully if DB is down
+    // 2b. PostGIS zone check — skip gracefully if DB is down
     let zone = null;
     try {
       zone = await validateDeliveryCoords(body.latitude, body.longitude);
     } catch {
-      console.warn('[orders] PostGIS zone check skipped — DB unavailable, using sync pre-check only.');
+      console.warn('[orders] PostGIS zone check skipped — using sync pre-check only.');
     }
 
-    // 3. Build the order object
+    // 3. Build order
     const orderId = randomUUID();
     const txRef   = generateTxRef(orderId);
     const now     = new Date().toISOString();
 
-    const order = {
+    // WhatsApp orders are cash-on-delivery in the DB (the 'whatsapp' value only
+    // exists at the API layer to drive the WAHA notification + confirmation page).
+    const dbPaymentMethod = body.paymentMethod === 'whatsapp' ? 'cash_on_delivery' : body.paymentMethod;
+
+    const orderPayload = {
+      id:               orderId,
+      customerName:     body.customerName,
+      customerPhone:    body.customerPhone,
+      customerEmail:    body.customerEmail,
+      customerWhatsapp: body.customerWhatsapp,
+      deliveryAddress:  body.deliveryAddress,
+      latitude:         body.latitude,
+      longitude:        body.longitude,
+      deliveryZoneId:   body.deliveryZoneId ?? zone?.id,
+      paymentMethod:    dbPaymentMethod,
+      subtotal:         body.subtotal,
+      deliveryFee:      body.deliveryFee,
+      total:            body.total,
+      currency:         body.currency,
+      notes:            body.notes,
+      productName:      body.productName,
+      txRef,
+    };
+
+    // Flat shape for localStore (matches column names)
+    const orderFlat = {
       id:                  orderId,
       customer_name:       body.customerName,
       customer_phone:      body.customerPhone,
@@ -169,7 +272,7 @@ export async function createOrder(req, res, next) {
       delivery_address:    body.deliveryAddress,
       delivery_zone_id:    body.deliveryZoneId ?? zone?.id ?? null,
       status:              'pending_payment',
-      payment_method:      body.paymentMethod,
+      payment_method:      dbPaymentMethod,
       payment_reference:   txRef,
       payment_verified_at: null,
       currency:            body.currency,
@@ -181,41 +284,68 @@ export async function createOrder(req, res, next) {
       updated_at:          now,
     };
 
-    // 4. ── PRIMARY WRITE — save to local JSON file ────────────────────────────
-    await saveOrder(order);
-    console.log(`[orders] ✓ Saved order ${orderId} to local store (data/orders.json)`);
+    // 4. PRIMARY WRITE — Supabase REST
+    let savedViaDb = false;
+    try {
+      await dbCreateOrder(orderPayload);
+      savedViaDb = true;
+      console.log(`[orders] ✓ Order ${orderId} written to Supabase.`);
+    } catch (dbErr) {
+      console.error(`[orders] ✗ DB write failed for ${orderId}: ${dbErr.message}`);
+      if (IS_SERVERLESS) {
+        // Vercel filesystem is read-only — cannot fall back to localStore.
+        // Return 503 so the customer knows to retry rather than losing their order silently.
+        return next(createError(503, 'Our order system is temporarily unavailable. Please try again in a moment.'));
+      }
+    }
 
-    // 5. ── SECONDARY WRITE — PostgreSQL (fire-and-forget) ────────────────────
-    dbCreateOrder({
-      id:               orderId,
-      customerName:     body.customerName,
-      customerPhone:    body.customerPhone,
-      customerEmail:    body.customerEmail,
-      customerWhatsapp: body.customerWhatsapp,
-      deliveryAddress:  body.deliveryAddress,
-      latitude:         body.latitude,
-      longitude:        body.longitude,
-      deliveryZoneId:   body.deliveryZoneId ?? zone?.id,
-      paymentMethod:    body.paymentMethod,
-      subtotal:         body.subtotal,
-      deliveryFee:      body.deliveryFee,
-      total:            body.total,
-      currency:         body.currency,
-      notes:            body.notes,
-      txRef,
-    }).then(() => {
-      console.log(`[orders] ✓ Order ${orderId} also written to PostgreSQL.`);
-    }).catch(err => {
-      console.warn(`[orders] ⚠ DB write skipped for order ${orderId} (local store is the record): ${err.message}`);
+    // 5. FALLBACK WRITE — localStore (local dev only, never on Vercel)
+    if (!IS_SERVERLESS) {
+      if (!savedViaDb) {
+        await saveOrder(orderFlat);
+        console.log(`[orders] ✓ Order ${orderId} saved to localStore (DB was unavailable).`);
+        console.warn(`[orders] ⚠ Order ${orderId} exists only in localStore. Check DB connection.`);
+      } else {
+        // Mirror to localStore in background for dev convenience — non-blocking
+        saveOrder(orderFlat).catch(() => {});
+      }
+    }
+
+    // 6. WhatsApp admin notification
+    // Awaited so Vercel doesn't kill the lambda before the WAHA HTTP request
+    // completes. Errors are caught inside notifyAdminNewOrder — never propagates.
+    await notifyAdminNewOrder({
+      orderId,
+      customerName:    body.customerName,
+      customerPhone:   body.customerPhone,
+      deliveryAddress: body.deliveryAddress,
+      paymentMethod:   body.paymentMethod,
+      subtotal:        body.subtotal,
+      deliveryFee:     body.deliveryFee,
+      total:           body.total,
+      currency:        body.currency,
+      productName:     body.productName,
+      notes:           body.notes,
     });
 
-    // 6. Generate payment link
+    // 7. Generate payment link (or WhatsApp confirmation redirect)
     let paymentLink;
-    if (env.NODE_ENV === 'development') {
-      paymentLink = `${env.FRONTEND_URL}/checkout/payment-result?orderId=${orderId}&dev=true`;
-      console.log(`[orders] [dev] Flutterwave skipped — dummy link for order ${orderId}`);
+    const confirmUrl = `${env.FRONTEND_URL}/order-confirmed?orderId=${orderId}`;
+    const paymentRedirect = `${env.FRONTEND_URL}/checkout/payment-result?orderId=${orderId}`;
+
+    if (body.paymentMethod === 'whatsapp') {
+      // WhatsApp orders skip Flutterwave — redirect straight to the thank-you page.
+      paymentLink = confirmUrl;
+      console.log(`[orders] WhatsApp order ${orderId} — skipping Flutterwave, redirecting to /order-confirmed`);
+    } else if (env.NODE_ENV === 'development' || !isFlutterwaveConfigured()) {
+      // Dev mode OR Flutterwave keys not yet configured → passthrough link.
+      paymentLink = `${paymentRedirect}&dev=true`;
+      if (!isFlutterwaveConfigured()) {
+        console.warn('[orders] Flutterwave key not configured — returning passthrough payment link. Set FLUTTERWAVE_SECRET_KEY in Vercel to enable live payments.');
+      } else {
+        console.log(`[orders] [dev] Flutterwave skipped — dummy link for order ${orderId}`);
+      }
     } else {
-      const redirect = `${env.FRONTEND_URL}/checkout/payment-result?orderId=${orderId}`;
       ({ paymentLink } = await initiatePayment({
         orderId,
         amount:        body.total,
@@ -224,27 +354,27 @@ export async function createOrder(req, res, next) {
         customerPhone: body.customerPhone,
         customerEmail: body.customerEmail ?? `${orderId}@orders.naneka.co.tz`,
         txRef,
-        redirectUrl:   redirect,
+        redirectUrl:   paymentRedirect,
       }));
     }
 
-    // 7. ── TERTIARY WRITE — Google Sheets (fire-and-forget) ──────────────────
+    // 7. Sheets sync (fire-and-forget)
     syncToSheets({
       orderNumber:     orderId.slice(0, 8).toUpperCase(),
-      createdAt:       order.created_at,
-      customerName:    order.customer_name,
-      total:           order.total,
-      deliveryAddress: order.delivery_address,
-      status:          order.status,
+      createdAt:       orderFlat.created_at,
+      customerName:    orderFlat.customer_name,
+      total:           orderFlat.total,
+      deliveryAddress: orderFlat.delivery_address,
+      status:          orderFlat.status,
     });
 
     return res.status(201).json({
       orderId,
       txRef,
       paymentLink,
-      currency: order.currency,
-      total:    order.total,
-      status:   order.status,
+      currency: body.currency,
+      total:    body.total,
+      status:   'pending_payment',
       ...(env.NODE_ENV === 'development' && { _dev: 'Payment step skipped in development mode' }),
     });
   } catch (err) {
@@ -323,11 +453,6 @@ export async function trackOrder(req, res, next) {
 }
 
 // ─── PATCH /api/v1/orders/:id/status ─────────────────────────────────────────
-/**
- * Advance an order to a new status.
- * Updates localStore immediately; attempts DB update as fire-and-forget.
- * Re-syncs to Google Sheets when status becomes 'paid'.
- */
 export async function updateOrderStatus(req, res, next) {
   try {
     const { status } = req.body;
@@ -335,28 +460,36 @@ export async function updateOrderStatus(req, res, next) {
       return next(createError(400, `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}`));
     }
 
-    // Primary update in localStore
-    const updated = await localUpdate(req.params.id, { status });
-    if (!updated) return next(createError(404, 'Order not found.'));
+    // Primary update in DB
+    let updated = null;
+    try {
+      const dbRow = await dbUpdateStatus(req.params.id, status);
+      updated = normaliseDbOrder(dbRow);
+    } catch (dbErr) {
+      console.warn(`[orders] DB status update failed for ${req.params.id}: ${dbErr.message}`);
+    }
 
-    // Secondary update in DB (fire-and-forget)
-    dbUpdateStatus(req.params.id, status).catch(err => {
-      console.warn(`[orders] ⚠ DB status update skipped for ${req.params.id}: ${err.message}`);
-    });
+    // Mirror update to localStore only in local dev (Vercel FS is read-only)
+    const localUpdated = IS_SERVERLESS
+      ? null
+      : await localUpdate(req.params.id, { status }).catch(() => null);
 
-    // Re-sync to Sheets when order is marked paid
+    // Use whichever succeeded
+    const result = updated ?? localUpdated;
+    if (!result) return next(createError(404, 'Order not found.'));
+
     if (status === 'paid') {
       syncToSheets({
-        orderNumber:     updated.id.slice(0, 8).toUpperCase(),
-        createdAt:       updated.created_at,
-        customerName:    updated.customer_name,
-        total:           updated.total,
-        deliveryAddress: updated.delivery_address,
-        status:          updated.status,
+        orderNumber:     result.id.slice(0, 8).toUpperCase(),
+        createdAt:       result.created_at,
+        customerName:    result.customer_name,
+        total:           result.total,
+        deliveryAddress: result.delivery_address,
+        status:          result.status,
       });
     }
 
-    return res.status(200).json(updated);
+    return res.status(200).json(result);
   } catch (err) {
     next(err);
   }
