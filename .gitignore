@@ -7,11 +7,12 @@ frontend/node_modules/
 frontend/dist/
 dist/
 
-# Environment files
+# Environment files — never commit secrets or local overrides
 .env
 .env.local
 .env.*.local
 backend/.env
+# .env.production is intentionally committed (non-secret Vercel build vars)
 
 # Logs
 *.log
