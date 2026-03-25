@@ -25,12 +25,14 @@ const REFRESH_MS = 30_000;
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 const STATUS_META = {
-  pending_payment:  { label: 'Pending Payment',  cls: 'badge-pending'  },
-  paid:             { label: 'Paid',              cls: 'badge-paid'     },
-  processing:       { label: 'Processing',        cls: 'badge-process'  },
-  out_for_delivery: { label: 'Out for Delivery',  cls: 'badge-delivery' },
-  delivered:        { label: 'Delivered',         cls: 'badge-done'     },
-  cancelled:        { label: 'Cancelled',         cls: 'badge-cancel'   },
+  pending_payment:  { label: 'Pending Payment',   cls: 'badge-pending'  },
+  paid:             { label: 'Paid',               cls: 'badge-paid'     },
+  preparing:        { label: 'Preparing',          cls: 'badge-process'  },
+  ready_for_pickup: { label: 'Ready for Pickup',   cls: 'badge-paid'     },
+  processing:       { label: 'Processing',         cls: 'badge-process'  },
+  out_for_delivery: { label: 'Out for Delivery',   cls: 'badge-delivery' },
+  delivered:        { label: 'Delivered',          cls: 'badge-done'     },
+  cancelled:        { label: 'Cancelled',          cls: 'badge-cancel'   },
 };
 
 // ─── Small shared components ───────────────────────────────────────────────────
@@ -1177,6 +1179,207 @@ function SectionsPanel() {
 // ══════════════════════════════════════════════════════════════════════════════
 // ORDERS TAB
 // ══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// PREPARER PANEL
+// ══════════════════════════════════════════════════════════════════════════════
+
+function PreparerPanel({ refreshKey = 0 }) {
+  const [orders,      setOrders]     = useState([]);
+  const [loading,     setLoading]    = useState(true);
+  const [error,       setError]      = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [refreshing,  setRefreshing]  = useState(false);
+  const [busy,        setBusy]        = useState({});
+  const [actionErr,   setActionErr]   = useState({});
+  const [token,       setToken]       = useState(() => localStorage.getItem('naneka_driver_token') ?? '');
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const fetchOrders = useCallback(async (manual = false) => {
+    if (manual) setRefreshing(true);
+    try {
+      const { data } = await api.get('/api/v1/orders/preparing');
+      setOrders(data.orders ?? []);
+      setLastUpdated(new Date());
+      setError(null);
+    } catch (err) {
+      setError(err.response?.data?.error?.message ?? err.message ?? 'Failed to load.');
+    } finally {
+      setLoading(false);
+      if (manual) setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchOrders(); }, [fetchOrders]);
+  useEffect(() => { if (refreshKey > 0) fetchOrders(true); }, [refreshKey]); // eslint-disable-line
+  useEffect(() => {
+    const id = setInterval(() => fetchOrders(), REFRESH_MS);
+    return () => clearInterval(id);
+  }, [fetchOrders]);
+
+  async function advanceStatus(orderId, nextStatus) {
+    setBusy(b => ({ ...b, [orderId]: true }));
+    setActionErr(e => ({ ...e, [orderId]: null }));
+    try {
+      await api.patch(`/api/v1/orders/${orderId}/status`, { status: nextStatus }, { headers: authHeaders });
+      // Remove from list if no longer in preparer statuses
+      if (!['pending_payment', 'paid', 'preparing'].includes(nextStatus)) {
+        setOrders(prev => prev.filter(o => o.id !== orderId));
+      } else {
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o));
+      }
+    } catch (err) {
+      const msg = err.response?.status === 401 || err.response?.status === 403
+        ? 'Not authorised. Paste your token in the Driver App → Token button and reload.'
+        : err.response?.data?.message ?? 'Update failed. Try again.';
+      setActionErr(e => ({ ...e, [orderId]: msg }));
+    } finally {
+      setBusy(b => ({ ...b, [orderId]: false }));
+    }
+  }
+
+  const pending    = orders.filter(o => o.status === 'pending_payment' || o.status === 'paid');
+  const inProgress = orders.filter(o => o.status === 'preparing');
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+      {/* Stats */}
+      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+        <StatCard label="New Orders"   value={pending.length}    accent="#B7770D"          icon="🔔" />
+        <StatCard label="Preparing"    value={inProgress.length} accent="var(--c-gold)"    icon="👨‍🍳" />
+        <StatCard label="Total Active" value={orders.length}     accent="var(--c-success)"  icon="📋" />
+      </div>
+
+      <div style={{ background: '#FFFFFF', border: '1px solid var(--c-border)', borderRadius: 'var(--radius-lg)', boxShadow: '0 2px 20px rgba(45,45,45,0.07)', overflow: 'hidden' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--c-border)', background: 'linear-gradient(90deg,#FFFFFF,rgba(197,160,33,0.03))' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-sm)', background: 'rgba(197,160,33,0.08)', border: '1px solid rgba(197,160,33,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' }}>👨‍🍳</div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, fontFamily: 'var(--font-serif)' }}>Preparer Queue</h2>
+              {lastUpdated && <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: 'var(--c-text-muted)' }}>Updated {lastUpdated.toLocaleTimeString()}</p>}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--c-text-dim)' }}>
+              Token: <input
+                value={token}
+                onChange={e => { setToken(e.target.value); localStorage.setItem('naneka_driver_token', e.target.value); }}
+                placeholder="Paste staff JWT…"
+                style={{ padding: '0.2rem 0.5rem', fontSize: '0.72rem', fontFamily: 'monospace', border: '1px solid var(--c-border)', borderRadius: '4px', width: '160px' }}
+              />
+            </div>
+            <button className="btn btn-ghost" onClick={() => fetchOrders(true)} disabled={refreshing} style={{ fontSize: '0.8125rem', padding: '0.5rem 0.875rem' }}>
+              {refreshing ? <><span className="spinner" /> Refreshing…</> : '⟳ Refresh'}
+            </button>
+          </div>
+        </div>
+
+        {loading && <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--c-text-muted)' }}><span className="spinner" style={{ width: '1.5rem', height: '1.5rem', color: 'var(--c-gold)' }} /></div>}
+        {!loading && error && <div style={{ margin: '1rem 1.5rem', background: 'var(--c-error-light)', border: '1px solid var(--c-error)', borderRadius: 'var(--radius-sm)', padding: '0.875rem 1rem', color: 'var(--c-error)', fontSize: '0.875rem' }}><strong>Error:</strong> {error}</div>}
+        {!loading && !error && orders.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--c-text-muted)' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '0.75rem' }}>✅</div>
+            <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.0625rem', color: 'var(--c-text)', marginBottom: '0.375rem' }}>Queue Clear!</p>
+            <p style={{ fontSize: '0.875rem' }}>No orders to prepare right now.</p>
+          </div>
+        )}
+
+        {/* Order cards */}
+        {!loading && orders.length > 0 && (
+          <div style={{ padding: '1rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+            {orders.map(order => {
+              const isBusy = busy[order.id];
+              const err    = actionErr[order.id];
+              const isPending  = order.status === 'pending_payment' || order.status === 'paid';
+              const isPreparing = order.status === 'preparing';
+              const items  = order.items ?? [];
+
+              return (
+                <div key={order.id} style={{
+                  background: '#FFFFFF', border: '1px solid var(--c-border)',
+                  borderLeft: `3px solid ${isPreparing ? 'var(--c-gold)' : '#B7770D'}`,
+                  borderRadius: 'var(--radius)', boxShadow: '0 2px 8px rgba(45,45,45,0.06)',
+                  overflow: 'hidden',
+                }}>
+                  <div style={{ padding: '1rem 1.125rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.7rem', fontFamily: 'monospace', color: 'var(--c-text-dim)', background: '#F5F5F5', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>#{order.id.slice(0, 8).toUpperCase()}</span>
+                        <StatusBadge status={order.status} />
+                        <span style={{ fontSize: '0.75rem', color: 'var(--c-text-dim)' }}>{new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 700, fontSize: '1rem', marginBottom: '0.15rem' }}>{order.customer_name}</div>
+                      <div style={{ fontSize: '0.8125rem', color: 'var(--c-text-muted)' }}>{order.customer_phone}</div>
+                      {order.delivery_address && (
+                        <div style={{ fontSize: '0.8125rem', color: 'var(--c-text-muted)', marginTop: '0.25rem' }}>📍 {order.delivery_address}</div>
+                      )}
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 800, fontSize: '1rem', color: 'var(--c-gold)' }}>
+                        TZS {Number(order.total).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Items list */}
+                  {items.length > 0 && (
+                    <div style={{ margin: '0 1.125rem 0.875rem', background: '#F9F7F2', border: '1px solid var(--c-border)', borderRadius: 'var(--radius-sm)', padding: '0.625rem 0.875rem' }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-muted)', marginBottom: '0.375rem' }}>Order Items</div>
+                      {items.map((item, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.875rem', paddingBottom: i < items.length - 1 ? '0.25rem' : 0 }}>
+                          <span style={{ fontWeight: 600 }}>{item.qty}× {item.name}</span>
+                          <span style={{ color: 'var(--c-text-muted)', fontSize: '0.8rem' }}>TZS {Number(item.price * item.qty).toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Notes */}
+                  {order.notes && (
+                    <div style={{ margin: '0 1.125rem 0.875rem', background: 'rgba(197,160,33,0.05)', border: '1px solid rgba(197,160,33,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.75rem', fontSize: '0.8125rem', color: 'var(--c-text)' }}>
+                      <strong>Notes:</strong> {order.notes}
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {err && (
+                    <div style={{ margin: '0 1.125rem 0.75rem', padding: '0.5rem 0.75rem', background: 'var(--c-error-light)', color: 'var(--c-error)', fontSize: '0.8125rem', borderRadius: 'var(--radius-sm)' }}>{err}</div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div style={{ padding: '0 1.125rem 1rem', display: 'flex', gap: '0.625rem' }}>
+                    {isPending && (
+                      <button
+                        className="btn btn-gold"
+                        disabled={isBusy}
+                        onClick={() => advanceStatus(order.id, 'preparing')}
+                        style={{ flex: 1, fontSize: '0.9rem', padding: '0.65rem 1rem', fontWeight: 700, background: '#1a1a1a', color: 'var(--c-gold)', border: '2px solid var(--c-gold)' }}
+                      >
+                        {isBusy ? <><span className="spinner" /> Updating…</> : '👨‍🍳 Accept — Start Preparing'}
+                      </button>
+                    )}
+                    {isPreparing && (
+                      <button
+                        className="btn btn-gold"
+                        disabled={isBusy}
+                        onClick={() => advanceStatus(order.id, 'ready_for_pickup')}
+                        style={{ flex: 1, fontSize: '0.9rem', padding: '0.65rem 1rem', fontWeight: 700 }}
+                      >
+                        {isBusy ? <><span className="spinner" /> Updating…</> : '✅ Ready for Pickup'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function OrdersPanel({ refreshKey = 0 }) {
   const [orders,      setOrders]      = useState([]);
   const [pagination,  setPagination]  = useState(null);
@@ -1383,10 +1586,11 @@ export default function AdminDashboard() {
   });
 
   const TAB_DESCRIPTIONS = {
-    orders:     'Live Orders · Auto-refresh 30 s',
-    products:   'Product Catalogue · Full Pro-Add form',
-    categories: 'Categories · Add & remove categories',
-    sections:   'Site Sections · Dynamic storefront carousels',
+    orders:    'Live Orders · Auto-refresh 30 s',
+    preparer:  'Preparer Queue · Accept & prepare orders for pickup',
+    products:  'Product Catalogue · Full Pro-Add form',
+    categories:'Categories · Add & remove categories',
+    sections:  'Site Sections · Dynamic storefront carousels',
   };
 
   return (
@@ -1422,6 +1626,7 @@ export default function AdminDashboard() {
             {/* Tab toggle */}
             <div style={{ display: 'flex', gap: '0.375rem', background: 'var(--c-surface-2)', borderRadius: '8px', padding: '0.25rem', border: '1px solid var(--c-border)' }}>
               <button style={TAB_STYLE(activeTab === 'orders')}     onClick={() => setActiveTab('orders')}>📋 Orders</button>
+              <button style={TAB_STYLE(activeTab === 'preparer')}   onClick={() => setActiveTab('preparer')}>👨‍🍳 Preparer</button>
               <button style={TAB_STYLE(activeTab === 'products')}   onClick={() => setActiveTab('products')}>📦 Products</button>
               <button style={TAB_STYLE(activeTab === 'categories')} onClick={() => setActiveTab('categories')}>🏷️ Categories</button>
               <button style={TAB_STYLE(activeTab === 'sections')}   onClick={() => setActiveTab('sections')}>📐 Sections</button>
@@ -1460,11 +1665,13 @@ export default function AdminDashboard() {
       <main style={{ maxWidth: '1400px', margin: '0 auto', padding: 'clamp(1.5rem,3vw,2rem) clamp(1rem,3vw,2rem)' }}>
         <div style={{ marginBottom: '1.25rem' }}>
           <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', fontWeight: 800, color: 'var(--c-text)', letterSpacing: '-0.01em', margin: 0 }}>
-            {activeTab === 'orders' ? 'Order Command Centre' : activeTab === 'products' ? 'Product Control' : activeTab === 'categories' ? 'Manage Categories' : 'Manage Site Sections'}
+            {activeTab === 'orders' ? 'Order Command Centre' : activeTab === 'preparer' ? 'Preparer Queue' : activeTab === 'products' ? 'Product Control' : activeTab === 'categories' ? 'Manage Categories' : 'Manage Site Sections'}
           </h1>
           <p style={{ fontSize: '0.8125rem', color: 'var(--c-text-muted)', marginTop: '0.25rem' }}>
             {activeTab === 'orders'
               ? 'Real-time order overview with Google Sheet sync status'
+              : activeTab === 'preparer'
+              ? 'Accept new orders, start preparing, and mark them ready for driver pickup.'
               : activeTab === 'products'
               ? 'Full product management — SKU, deep categories, features, gallery, visibility.'
               : activeTab === 'categories'
@@ -1474,6 +1681,7 @@ export default function AdminDashboard() {
         </div>
 
         {activeTab === 'orders'     && <OrdersPanel     refreshKey={refreshKey} />}
+        {activeTab === 'preparer'   && <PreparerPanel   refreshKey={refreshKey} />}
         {activeTab === 'products'   && <ProductsPanel   refreshKey={refreshKey} />}
         {activeTab === 'categories' && <CategoriesPanel />}
         {activeTab === 'sections'   && <SectionsPanel />}

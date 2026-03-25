@@ -12,24 +12,20 @@ import api from '../lib/api.js';
 import { NanekaLogo } from './Storefront.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
-// Statuses a driver needs to act on
-const PENDING_STATUSES   = ['pending_payment', 'paid', 'processing', 'out_for_delivery'];
+// Statuses a driver needs to act on (preparer marks ready_for_pickup before driver sees it)
+const PENDING_STATUSES   = ['ready_for_pickup', 'out_for_delivery'];
 const COMPLETED_STATUSES = ['delivered'];
 
 const STATUS_META = {
-  pending_payment:  { label: 'Awaiting Payment', cls: 'badge-pending'  },
-  paid:             { label: 'Ready to Accept',  cls: 'badge-paid'     },
-  processing:       { label: 'Accepted',         cls: 'badge-process'  },
-  out_for_delivery: { label: 'En Route',         cls: 'badge-delivery' },
-  delivered:        { label: 'Delivered',        cls: 'badge-done'     },
-  cancelled:        { label: 'Cancelled',        cls: 'badge-cancel'   },
+  ready_for_pickup: { label: 'Ready for Pickup', cls: 'badge-paid'     },
+  out_for_delivery: { label: 'En Route',          cls: 'badge-delivery' },
+  delivered:        { label: 'Delivered',         cls: 'badge-done'     },
+  cancelled:        { label: 'Cancelled',         cls: 'badge-cancel'   },
 };
 
 // Maps each actionable status → the next status and button label
 const STATUS_ACTIONS = {
-  pending_payment:  { next: 'processing',       label: 'Accept Order'      },
-  paid:             { next: 'processing',       label: 'Accept Order'      },
-  processing:       { next: 'out_for_delivery', label: 'Start Delivery'    },
+  ready_for_pickup: { next: 'out_for_delivery', label: 'Start Delivery'    },
   out_for_delivery: { next: 'delivered',        label: 'Complete Delivery' },
 };
 

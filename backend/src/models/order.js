@@ -4,7 +4,7 @@
  * Uses @supabase/supabase-js (HTTPS REST) instead of a direct pg connection so
  * it works from GitHub Codespaces where the direct Supabase host is IPv6-only.
  *
- * Valid statuses: pending_payment | paid | processing | out_for_delivery | delivered | cancelled
+ * Valid statuses: pending_payment | paid | preparing | ready_for_pickup | processing | out_for_delivery | delivered | cancelled
  */
 
 import { supabase } from '../config/supabase.js';
@@ -36,6 +36,7 @@ export async function createOrder(data) {
       delivery_fee:      data.deliveryFee,
       total:             data.total,
       notes:             data.notes              ?? null,
+      items:             data.items              ?? null,
     })
     .select()
     .single();
@@ -117,6 +118,18 @@ export async function listOrders({ limit = 100, offset = 0 } = {}) {
 
   throwIfError(error, 'listOrders');
   return { rows: data ?? [], total: count ?? 0 };
+}
+
+export async function listOrdersByStatuses(statuses, { limit = 200 } = {}) {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('*')
+    .in('status', statuses)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  throwIfError(error, 'listOrdersByStatuses');
+  return data ?? [];
 }
 
 export async function markOrderPaid(id, _flutterwaveTransactionId) {

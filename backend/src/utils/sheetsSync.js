@@ -60,6 +60,7 @@ export async function syncToSheets(order) {
     orderNumber:     order.orderNumber,
     createdAt:       order.createdAt,
     customerName:    order.customerName,
+    customerPhone:   order.customerPhone ?? null,
     total:           order.total,
     deliveryAddress: order.deliveryAddress,
     status:          order.status,

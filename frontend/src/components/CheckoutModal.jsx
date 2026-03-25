@@ -282,6 +282,7 @@ export default function CheckoutModal({ product, onClose, mode = 'checkout' }) {
         subtotal, deliveryFee: DELIVERY_FEE, total, currency: CURRENCY,
         notes:        form.orderNotes.trim() || undefined,
         productName:  product?.name ?? undefined,
+        items:        product ? [{ id: product.id, name: product.name, price: Number(product.price), qty: 1 }] : undefined,
       });
       const redirectUrl = new URL(data.paymentLink);
       let href = window.location.origin + redirectUrl.pathname + redirectUrl.search;

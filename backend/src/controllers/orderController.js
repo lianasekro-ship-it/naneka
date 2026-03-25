@@ -37,6 +37,7 @@ import {
   findOrderByShortCode as dbFindByCode,
   updateOrderStatus    as dbUpdateStatus,
   listOrders           as dbListOrders,
+  listOrdersByStatuses as dbListByStatuses,
 } from '../models/order.js';
 import { findDeliveryByOrderId } from '../models/activeDelivery.js';
 import { syncToSheets }          from '../utils/sheetsSync.js';
@@ -67,10 +68,17 @@ const createOrderSchema = z.object({
   notes:            z.string().max(500).optional(),
   deliveryZoneId:   z.string().uuid().optional(),
   productName:      z.string().max(300).optional(),
+  items:            z.array(z.object({
+    id:    z.string().optional(),
+    name:  z.string(),
+    price: z.number(),
+    qty:   z.number().int().positive(),
+  })).optional(),
 });
 
 const VALID_STATUSES = [
-  'pending_payment', 'paid', 'processing', 'out_for_delivery', 'delivered', 'cancelled',
+  'pending_payment', 'paid', 'preparing', 'ready_for_pickup',
+  'processing', 'out_for_delivery', 'delivered', 'cancelled',
 ];
 
 /**
@@ -113,6 +121,7 @@ function normaliseDbOrder(row) {
     delivery_fee:        parseFloat(row.delivery_fee),
     total:               parseFloat(row.total),
     notes:               row.notes ?? null,
+    items:               row.items ?? null,
     created_at:          row.created_at,
     updated_at:          row.updated_at,
   };
@@ -181,20 +190,41 @@ export async function listOrders(req, res, next) {
   }
 }
 
-// ─── GET /api/v1/orders/pending ───────────────────────────────────────────────
+// ─── GET /api/v1/orders/pending (Driver App) ──────────────────────────────────
+// Only shows orders the driver needs to act on: ready_for_pickup + out_for_delivery
 export async function listPendingOrders(req, res, next) {
   try {
-    const PENDING = new Set(['pending_payment', 'paid', 'processing', 'out_for_delivery']);
+    const DRIVER_STATUSES = ['ready_for_pickup', 'out_for_delivery'];
     let orders = [];
 
     try {
-      const result = await dbListOrders({ limit: 200, offset: 0 });
-      orders = (result.rows ?? [])
-        .filter(r => PENDING.has(r.status))
-        .map(normaliseDbOrder);
+      orders = (await dbListByStatuses(DRIVER_STATUSES)).map(normaliseDbOrder);
     } catch (dbErr) {
       if (IS_SERVERLESS) throw dbErr;
-      orders = await readPendingOrders();
+      // local dev fallback — filter from local store
+      const all = await readPendingOrders();
+      orders = all.filter(o => DRIVER_STATUSES.includes(o.status));
+    }
+
+    return res.status(200).json({ orders, total: orders.length });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ─── GET /api/v1/orders/preparing (Preparer App) ──────────────────────────────
+// Shows orders the kitchen/preparer needs to act on: pending_payment, paid, preparing
+export async function listPreparerOrders(req, res, next) {
+  try {
+    const PREPARER_STATUSES = ['pending_payment', 'paid', 'preparing'];
+    let orders = [];
+
+    try {
+      orders = (await dbListByStatuses(PREPARER_STATUSES)).map(normaliseDbOrder);
+    } catch (dbErr) {
+      if (IS_SERVERLESS) throw dbErr;
+      const all = await readPendingOrders();
+      orders = all.filter(o => PREPARER_STATUSES.includes(o.status));
     }
 
     return res.status(200).json({ orders, total: orders.length });
@@ -259,6 +289,7 @@ export async function createOrder(req, res, next) {
       currency:         body.currency,
       notes:            body.notes,
       productName:      body.productName,
+      items:            body.items ?? (body.productName ? [{ name: body.productName, price: body.subtotal, qty: 1 }] : null),
       txRef,
     };
 
@@ -478,16 +509,16 @@ export async function updateOrderStatus(req, res, next) {
     const result = updated ?? localUpdated;
     if (!result) return next(createError(404, 'Order not found.'));
 
-    if (status === 'paid') {
-      syncToSheets({
-        orderNumber:     result.id.slice(0, 8).toUpperCase(),
-        createdAt:       result.created_at,
-        customerName:    result.customer_name,
-        total:           result.total,
-        deliveryAddress: result.delivery_address,
-        status:          result.status,
-      });
-    }
+    // Sync every status change to Google Sheets
+    syncToSheets({
+      orderNumber:     result.id.slice(0, 8).toUpperCase(),
+      createdAt:       result.created_at,
+      customerName:    result.customer_name,
+      customerPhone:   result.customer_phone,
+      total:           result.total,
+      deliveryAddress: result.delivery_address,
+      status:          result.status,
+    });
 
     return res.status(200).json(result);
   } catch (err) {
