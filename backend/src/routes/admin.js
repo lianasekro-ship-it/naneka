@@ -378,6 +378,194 @@ router.get('/debug-groups', async (req, res) => {
 });
 
 /**
+ * GET /api/v1/admin/rescue-id
+ *
+ * Zero-friction WAHA group finder — open in a browser, no API key needed.
+ * Returns an HTML page showing:
+ *   • Which env vars are live on this server
+ *   • The Naneka Orders group ID (plain, ready to copy)
+ *   • Exact fix instructions for every failure mode (401, localhost, etc.)
+ *
+ * Remove this route once WAHA_GROUP_ID is set in Vercel.
+ */
+router.get('/rescue-id', async (req, res) => {
+  const wahaBaseUrl    = process.env.WAHA_BASE_URL   || '';
+  const wahaApiKey     = process.env.WAHA_API_KEY    || '';
+  const wahaSession    = process.env.WAHA_SESSION    || 'default';
+  const currentGroupId = process.env.WAHA_GROUP_ID   || '';
+  const keyPreview     = wahaApiKey
+    ? `${wahaApiKey.slice(0, 6)}…${wahaApiKey.slice(-4)}`
+    : '(not set)';
+
+  const css = `
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+         max-width:680px;margin:40px auto;padding:0 20px;background:#f8fafc;color:#1e293b}
+    h1{margin-bottom:4px}p.sub{color:#64748b;margin-top:0}
+    .card{background:#fff;border-radius:12px;padding:20px 24px;margin:16px 0;
+          box-shadow:0 1px 4px rgba(0,0,0,.08)}
+    .ok{border-left:4px solid #22c55e}.err{border-left:4px solid #ef4444}
+    .warn{border-left:4px solid #f59e0b}.info{border-left:4px solid #3b82f6}
+    .bigid{font-family:monospace;font-size:1.35em;font-weight:700;color:#15803d;
+           background:#f0fdf4;padding:12px 16px;border-radius:8px;
+           word-break:break-all;display:block;margin:10px 0}
+    code{background:#f1f5f9;padding:2px 6px;border-radius:4px;font-family:monospace;font-size:.9em}
+    ol,ul{padding-left:20px;line-height:1.9}
+    .env-table{width:100%;border-collapse:collapse;font-size:.9em}
+    .env-table td{padding:6px 10px;border-bottom:1px solid #f1f5f9}
+    .env-table td:first-child{color:#64748b;width:200px}
+    .tick{color:#22c55e}.cross{color:#ef4444}`;
+
+  const envRows = `
+    <table class="env-table">
+      <tr><td>WAHA_BASE_URL</td><td>${wahaBaseUrl  || '<span class="cross">✗ NOT SET</span>'}</td></tr>
+      <tr><td>WAHA_API_KEY</td><td>${wahaApiKey   ? `<span class="tick">✓</span> ${keyPreview}` : '<span class="cross">✗ NOT SET</span>'}</td></tr>
+      <tr><td>WAHA_SESSION</td><td>${wahaSession}</td></tr>
+      <tr><td>WAHA_GROUP_ID</td><td>${currentGroupId || '<span class="cross">✗ NOT SET — this is what you need</span>'}</td></tr>
+    </table>`;
+
+  const page = (title, body) => res.send(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Naneka — ${title}</title><style>${css}</style></head>
+<body><h1>🔍 Naneka Rescue</h1><p class="sub">${title}</p>${body}</body></html>`);
+
+  // ── Already done ─────────────────────────────────────────────────────────
+  if (currentGroupId) {
+    return page('WAHA_GROUP_ID already set', `
+      <div class="card ok">
+        <h2>✅ Already configured!</h2>
+        <span class="bigid">${currentGroupId}</span>
+        <p>This ID is live in <code>WAHA_GROUP_ID</code>. WhatsApp group notifications are enabled.</p>
+      </div>
+      <div class="card info"><h3>Environment</h3>${envRows}</div>`);
+  }
+
+  // ── Missing env vars ──────────────────────────────────────────────────────
+  if (!wahaBaseUrl || !wahaApiKey) {
+    return page('WAHA not configured', `
+      <div class="card err">
+        <h2>❌ Missing environment variables</h2>
+        <p>The server can't reach WAHA because one or more env vars are not set in Vercel.</p>
+        <ul>
+          ${!wahaBaseUrl ? '<li>Add <code>WAHA_BASE_URL</code> — the public URL of your WAHA instance (not localhost!)</li>' : ''}
+          ${!wahaApiKey  ? '<li>Add <code>WAHA_API_KEY</code> — must match the key in your WAHA dashboard</li>' : ''}
+        </ul>
+        <p>After adding them: <strong>Vercel → Project → Settings → Environment Variables → Redeploy</strong></p>
+      </div>
+      <div class="card info"><h3>Current environment on this server</h3>${envRows}</div>`);
+  }
+
+  // ── Try WAHA ─────────────────────────────────────────────────────────────
+  let wahaRes;
+  try {
+    wahaRes = await fetch(`${wahaBaseUrl}/api/${wahaSession}/chats`, {
+      headers: { 'X-Api-Key': wahaApiKey },
+      signal:  AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    const isLocal = wahaBaseUrl.includes('localhost') || wahaBaseUrl.includes('127.0.0.1');
+    return page('Cannot reach WAHA', `
+      <div class="card err">
+        <h2>🔌 Could not connect to WAHA</h2>
+        <p>Tried: <code>${wahaBaseUrl}</code></p>
+        <p>Error: <code>${err.message}</code></p>
+      </div>
+      ${isLocal ? `
+      <div class="card warn">
+        <h2>⚠️ <code>localhost</code> won't work from Vercel</h2>
+        <p>Vercel runs in the cloud — <code>localhost:3001</code> on Vercel is Vercel's own machine, not yours.</p>
+        <ol>
+          <li>Expose WAHA publicly using <a href="https://ngrok.com">ngrok</a>, Cloudflare Tunnel, or your VPS public IP</li>
+          <li>Update <code>WAHA_BASE_URL</code> in Vercel to that public URL (e.g. <code>https://abc123.ngrok.io</code>)</li>
+          <li>Redeploy and open this page again</li>
+        </ol>
+      </div>` : ''}
+      <div class="card info"><h3>Environment</h3>${envRows}</div>`);
+  }
+
+  // ── 401 — key mismatch ────────────────────────────────────────────────────
+  if (wahaRes.status === 401) {
+    return page('401 — API Key mismatch', `
+      <div class="card err">
+        <h2>🔑 401 Unauthorized — the API key doesn't match</h2>
+        <p>This server is sending key: <code>${keyPreview}</code></p>
+        <p>WAHA is rejecting it. Choose one fix:</p>
+        <h3>Option A — Update WAHA to use the same key</h3>
+        <ol>
+          <li>Open your WAHA dashboard at <code>${wahaBaseUrl}</code></li>
+          <li>Go to <strong>Settings → API Key</strong></li>
+          <li>Set it to exactly: <code>${wahaApiKey}</code></li>
+          <li>Restart WAHA and refresh this page</li>
+        </ol>
+        <h3>Option B — Update Vercel to match WAHA's current key</h3>
+        <ol>
+          <li>Find the current API key in your WAHA dashboard</li>
+          <li>Set <code>WAHA_API_KEY=&lt;that key&gt;</code> in Vercel → Redeploy</li>
+        </ol>
+      </div>
+      <div class="card info"><h3>Environment</h3>${envRows}</div>`);
+  }
+
+  // ── Other WAHA error ──────────────────────────────────────────────────────
+  if (!wahaRes.ok) {
+    const detail = await wahaRes.text().catch(() => '');
+    return page(`WAHA error ${wahaRes.status}`, `
+      <div class="card err">
+        <h2>❌ WAHA returned HTTP ${wahaRes.status}</h2>
+        <p>${detail || 'No details returned.'}</p>
+        <p>Is the WAHA session started and the phone connected?</p>
+      </div>
+      <div class="card info"><h3>Environment</h3>${envRows}</div>`);
+  }
+
+  // ── Parse groups ──────────────────────────────────────────────────────────
+  const payload  = await wahaRes.json();
+  const all      = Array.isArray(payload) ? payload : (payload.chats ?? []);
+  const groups   = all
+    .filter(c => (c.id || '').endsWith('@g.us'))
+    .map(g => ({ id: g.id, name: g.name ?? g.subject ?? '(unnamed)' }));
+
+  const target = groups.find(g =>
+    /naneka|order/i.test(g.name)
+  );
+
+  const groupCards = groups.map(g => `
+    <div class="card ${target && g.id === target.id ? 'ok' : ''}">
+      <strong>${g.name}</strong>
+      <span class="bigid">${g.id}</span>
+    </div>`).join('');
+
+  if (target) {
+    return page('Group ID found!', `
+      <div class="card ok">
+        <h2>✅ "${target.name}" found</h2>
+        <p>Copy this value → add it as <code>WAHA_GROUP_ID</code> in Vercel → Redeploy:</p>
+        <span class="bigid">${target.id}</span>
+      </div>
+      <div class="card info"><h3>Environment</h3>${envRows}</div>
+      <h3>All groups (${groups.length})</h3>${groupCards}`);
+  }
+
+  if (groups.length === 0) {
+    return page('No groups found', `
+      <div class="card warn">
+        <h2>⚠️ No WhatsApp groups found</h2>
+        <p>The WAHA session is connected but the phone isn't in any group, or the session isn't fully started.</p>
+        <p>Add the Naneka phone number to a group, then refresh this page.</p>
+      </div>
+      <div class="card info"><h3>Environment</h3>${envRows}</div>`);
+  }
+
+  return page('Pick your group', `
+    <div class="card warn">
+      <h2>⚠️ Could not auto-detect "Naneka Orders"</h2>
+      <p>Pick the correct group below and copy its ID into <code>WAHA_GROUP_ID</code> in Vercel:</p>
+    </div>
+    ${groupCards}
+    <div class="card info"><h3>Environment</h3>${envRows}</div>`);
+});
+
+/**
  * GET /api/v1/admin/waha/groups?key=<WAHA_API_KEY>
  *
  * Proxies through to WAHA (using the server's WAHA_BASE_URL, which IS
