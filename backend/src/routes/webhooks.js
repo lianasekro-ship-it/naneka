@@ -42,8 +42,32 @@ router.post('/flutterwave', (req, res, next) => {
 });
 
 // POST /webhooks/waha
+// WAHA posts events here. We log any group IDs we see so the operator can
+// find their WAHA_GROUP_ID without needing to query the WAHA API directly.
 router.post('/waha', (req, res) => {
-  // TODO: Handle inbound WhatsApp message events (e.g. customer replies)
+  try {
+    // req.body is a raw Buffer here because of the express.raw() middleware on /webhooks
+    const body = req.body instanceof Buffer
+      ? JSON.parse(req.body.toString())
+      : (typeof req.body === 'string' ? JSON.parse(req.body) : req.body);
+
+    // WAHA can wrap the payload under different keys depending on version
+    const from = body?.payload?.from ?? body?.from ?? body?.chatId ?? '';
+
+    if (from.endsWith('@g.us')) {
+      const name = body?.payload?.chat?.name
+        ?? body?.payload?.name
+        ?? body?.chat?.name
+        ?? '(unnamed)';
+      console.log('[waha] ══════════════ GROUP MESSAGE RECEIVED ══════════════');
+      console.log(`[waha]  GROUP ID   : ${from}   ← set this as WAHA_GROUP_ID`);
+      console.log(`[waha]  Group Name : ${name}`);
+      console.log('[waha] ════════════════════════════════════════════════════');
+    }
+  } catch (_) {
+    // Never let logging crash the webhook response
+  }
+
   res.status(200).json({ received: true });
 });
 

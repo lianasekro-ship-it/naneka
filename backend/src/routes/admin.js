@@ -297,8 +297,85 @@ router.delete('/products/:id', async (req, res, next) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// WAHA DIAGNOSTIC TOOL
+// WAHA DIAGNOSTIC TOOLS
 // ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * GET /api/v1/admin/debug-groups
+ *
+ * No API key required — open directly in a browser to see:
+ *   1. Which WAHA env vars are configured on this server
+ *   2. All WhatsApp groups the session is in (to find WAHA_GROUP_ID)
+ *
+ * Remove this route (or set DISABLE_DEBUG_GROUPS=true) once WAHA_GROUP_ID is set.
+ */
+router.get('/debug-groups', async (req, res) => {
+  const wahaBaseUrl = process.env.WAHA_BASE_URL;
+  const wahaApiKey  = process.env.WAHA_API_KEY;
+  const wahaSession = process.env.WAHA_SESSION || 'default';
+
+  // Always include env status so you can verify what the server sees
+  const envStatus = {
+    WAHA_BASE_URL:  wahaBaseUrl ? `✓ set → ${wahaBaseUrl}` : '✗ NOT SET',
+    WAHA_API_KEY:   wahaApiKey  ? '✓ set (value hidden)'   : '✗ NOT SET',
+    WAHA_SESSION:   wahaSession,
+    WAHA_GROUP_ID:  process.env.WAHA_GROUP_ID
+                      ? `✓ already set → ${process.env.WAHA_GROUP_ID}`
+                      : '✗ NOT SET — this is what you need to find',
+    WAHA_ADMIN_PHONE: process.env.WAHA_ADMIN_PHONE || '(not set)',
+  };
+
+  if (!wahaBaseUrl || !wahaApiKey) {
+    return res.json({
+      ok: false,
+      error: 'WAHA is not configured on this server.',
+      env_status: envStatus,
+      fix: 'Add WAHA_BASE_URL and WAHA_API_KEY to your Vercel environment variables and redeploy.',
+    });
+  }
+
+  try {
+    const url     = `${wahaBaseUrl}/api/${wahaSession}/chats`;
+    const wahaRes = await fetch(url, {
+      headers: { 'X-Api-Key': wahaApiKey },
+      signal:  AbortSignal.timeout(10_000),
+    });
+
+    if (!wahaRes.ok) {
+      const detail = await wahaRes.text().catch(() => '');
+      return res.json({
+        ok: false,
+        error: `WAHA returned HTTP ${wahaRes.status}`,
+        detail,
+        env_status: envStatus,
+        hint: 'Is the WAHA session started and the phone connected?',
+      });
+    }
+
+    const payload = await wahaRes.json();
+    const all     = Array.isArray(payload) ? payload : (payload.chats ?? []);
+    const groups  = all
+      .filter(c => (c.id || '').endsWith('@g.us'))
+      .map(g => ({ id: g.id, name: g.name ?? g.subject ?? '(unnamed)' }));
+
+    return res.json({
+      ok: true,
+      env_status: envStatus,
+      groups,
+      total: groups.length,
+      next_step: groups.length > 0
+        ? 'Copy the "id" of your Naneka Orders group → add WAHA_GROUP_ID=<id> to Vercel env vars → redeploy → this route is no longer needed.'
+        : 'No groups found. Make sure the WAHA session is active and the WhatsApp number is in at least one group.',
+    });
+  } catch (err) {
+    return res.json({
+      ok: false,
+      error: `Could not reach WAHA: ${err.message}`,
+      env_status: envStatus,
+      hint: `Tried: ${wahaBaseUrl}. Is WAHA publicly accessible from Vercel?`,
+    });
+  }
+});
 
 /**
  * GET /api/v1/admin/waha/groups?key=<WAHA_API_KEY>
