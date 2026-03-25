@@ -2,9 +2,20 @@ import { useState } from 'react';
 import { useCart } from '../context/CartContext.jsx';
 
 const DELIVERY_FEE = 3_500;
+const WA_NUMBER   = '255700000000'; // TODO: replace with real WhatsApp number
 
 function formatTZS(n) {
   return 'TZS\u00A0' + Number(n).toLocaleString('en-TZ');
+}
+
+function buildWhatsAppMessage(items, total) {
+  const lines = items.map(({ product, qty }) =>
+    `• ${product.name} x${qty} — ${formatTZS(product.price * qty)}`
+  ).join('\n');
+  const grand = total + DELIVERY_FEE;
+  return encodeURIComponent(
+    `Hello Naneka! I'd like to complete my order:\n\n${lines}\n\nDelivery: ${formatTZS(DELIVERY_FEE)}\n*Total: ${formatTZS(grand)}*\n\nPlease confirm availability and delivery details.`
+  );
 }
 
 export default function CartDrawer({ onCheckout }) {
@@ -121,14 +132,34 @@ export default function CartDrawer({ onCheckout }) {
             >
               Proceed to Checkout →
             </button>
-            <p style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--c-text-dim)' }}>
+
+            {/* WhatsApp order */}
+            <a
+              href={`https://wa.me/${WA_NUMBER}?text=${buildWhatsAppMessage(items, total)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setDrawerOpen(false)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                width: '100%', padding: '0.75rem',
+                background: '#25D366', border: 'none', borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer', textDecoration: 'none',
+                fontSize: '0.875rem', fontWeight: 700, color: '#fff',
+                fontFamily: 'var(--font-sans)', letterSpacing: '0.02em',
+                marginBottom: '0.375rem',
+              }}
+            >
+              <span style={{ fontSize: '1.1rem' }}>💬</span> Complete Order via WhatsApp
+            </a>
+
+            <p style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--c-text-dim)', marginBottom: '0.5rem' }}>
               Multi-item checkout · Secured by Flutterwave
             </p>
 
             <button
               onClick={() => setDrawerOpen(false)}
               style={{
-                width: '100%', marginTop: '0.5rem', padding: '0.6rem',
+                width: '100%', padding: '0.6rem',
                 background: 'none', border: '1px solid var(--c-border)',
                 borderRadius: 'var(--radius-sm)', cursor: 'pointer',
                 fontSize: '0.8125rem', color: 'var(--c-text-muted)', fontFamily: 'var(--font-sans)',

@@ -66,11 +66,41 @@ app.use('/api',                priceCheckRouter);    // GET /api/price-check
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'naneka-backend' }));
 
+// ─── WAHA QR proxy — always serves the freshest QR from WAHA ─────────────────
+// Open in browser to scan: GET /qr
+app.get('/qr', async (_req, res) => {
+  try {
+    const wahaUrl = `${process.env.WAHA_BASE_URL || 'http://localhost:3001'}/api/default/auth/qr`;
+    const r = await fetch(wahaUrl, { headers: { 'X-Api-Key': process.env.WAHA_API_KEY || '' } });
+    if (!r.ok) {
+      return res.status(503).send(`WAHA returned ${r.status}. Is the session started?`);
+    }
+    const buf = await r.arrayBuffer();
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-store');
+    res.set('Refresh', '20'); // browser auto-refreshes every 20 s
+    return res.send(Buffer.from(buf));
+  } catch (e) {
+    return res.status(503).send('WAHA unreachable: ' + e.message);
+  }
+});
+
+app.get('/', (_req, res) => res.json({
+  service:  'naneka-backend',
+  status:   'ok',
+  version:  '1.0.0',
+  docs:     '/api/v1',
+}));
+
 // ─── Error Handler ───────────────────────────────────────────────────────────
 app.use(errorHandler);
 
-app.listen(env.PORT, '0.0.0.0', () => {
-  console.log(`Naneka backend running on port ${env.PORT} [${env.NODE_ENV}]`);
-});
+// Vercel runs the file as a module and calls the exported handler directly.
+// process.env.VERCEL is set automatically on all Vercel deployments.
+if (!process.env.VERCEL) {
+  app.listen(env.PORT, '0.0.0.0', () => {
+    console.log(`Naneka backend running on port ${env.PORT} [${env.NODE_ENV}]`);
+  });
+}
 
 export default app;

@@ -17,7 +17,19 @@
       "Bash(__NEW_LINE_48d7c0872055f65a__ docker exec naneka_db psql -U naneka_user -d naneka -c \":*)",
       "Bash(docker ps:*)",
       "Bash(pkill -f \"node src/server.js\")",
-      "Bash(PHONE_ID=\"c0000000-0000-0000-0000-000000000001\")"
+      "Bash(PHONE_ID=\"c0000000-0000-0000-0000-000000000001\")",
+      "mcp__claude_ai_Supabase__list_projects",
+      "mcp__claude_ai_Supabase__list_tables",
+      "mcp__claude_ai_Supabase__apply_migration",
+      "mcp__claude_ai_Supabase__execute_sql",
+      "Bash(npm install:*)",
+      "Bash(npx tailwindcss:*)",
+      "Bash(./node_modules/.bin/tailwindcss init:*)",
+      "Bash(find /workspaces/codespaces-blank/naneka-platform -maxdepth 2 -name *.json ! -path */node_modules/*)",
+      "Bash(npm run:*)",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(find /workspaces/codespaces-blank/naneka-platform -name axios.js -o -name api.js -o -name *.config.js)",
+      "Bash(ls:*)"
     ]
   }
 }

@@ -23,71 +23,20 @@
 
 import { query } from '../../config/db.js';
 
-// ─── Hardcoded delivery zone polygon ─────────────────────────────────────────
-//
-// Vertices trace the Phase 1 delivery area clockwise from the north tip of
-// the Msasani peninsula, sweeping south through Kariakoo, then across to
-// Kigamboni and back.
-//
-// Each entry: [latitude, longitude]
-// Drawn to match the 10 km radius seed in db/seeds/dar_es_salaam_zone.sql.
-// Replace with a QGIS-exported polygon before expanding coverage.
-
-const DAR_ES_SALAAM_ZONE = [
-  [-6.748,  39.245],  // 1 — Msasani peninsula, north tip
-  [-6.758,  39.285],  // 2 — Masaki east / Oyster Bay north
-  [-6.790,  39.300],  // 3 — Oyster Bay south / Upanga coastline
-  [-6.815,  39.300],  // 4 — Kivukoni / ferry terminal (north shore)
-  [-6.845,  39.320],  // 5 — Kigamboni north
-  [-6.895,  39.325],  // 6 — Kigamboni south
-  [-6.895,  39.252],  // 7 — South-west corner (Ilala / Buguruni)
-  [-6.848,  39.248],  // 8 — Kariakoo south-west
-  [-6.810,  39.248],  // 9 — Kariakoo north-west
-  [-6.762,  39.248],  // 10 — Msasani peninsula, south-west
-];
-
-// ─── Pure-JS ray-casting ──────────────────────────────────────────────────────
-
-/**
- * Ray-casting algorithm — determines whether a point lies inside a polygon.
- * Fires a horizontal ray east from (lat, lng) and counts edge crossings.
- * An odd count means the point is inside.
- *
- * Works correctly for convex and simple concave polygons.
- * Not intended for polygons that span the ±180° antimeridian.
- *
- * @param {number}   lat      Point latitude
- * @param {number}   lng      Point longitude
- * @param {number[][]} polygon  Array of [lat, lng] vertices (open or closed ring)
- * @returns {boolean}
- */
-function isPointInPolygon(lat, lng, polygon) {
-  let inside = false;
-  const n = polygon.length;
-
-  for (let i = 0, j = n - 1; i < n; j = i++) {
-    const [latI, lngI] = polygon[i];
-    const [latJ, lngJ] = polygon[j];
-
-    // Check whether the ray from (lat, lng) eastward crosses this edge
-    const crosses =
-      latI > lat !== latJ > lat &&
-      lng < ((lngJ - lngI) * (lat - latI)) / (latJ - latI) + lngI;
-
-    if (crosses) inside = !inside;
-  }
-
-  return inside;
-}
-
 // ─── Public API ───────────────────────────────────────────────────────────────
+
+// ─── Bounding box for greater Dar es Salaam ──────────────────────────────────
+// Covers all wards including Masaki, Kigamboni, Mbezi Beach, Mbagala, etc.
+// The tight polygon above is kept for reference and future Phase 2 sub-zones.
+const DSM_BOUNDS = { latMin: -7.10, latMax: -6.55, lngMin: 39.10, lngMax: 39.60 };
 
 /**
  * Fast synchronous check: is this coordinate within the Dar es Salaam
- * delivery zone?
+ * delivery area?
  *
- * Uses the hardcoded polygon — no DB call, no async, no dependencies.
- * Safe to call on every keystroke of a coordinate input if needed.
+ * Uses a broad bounding box so that all known DSM wards (Masaki, Mikocheni,
+ * Kigamboni, Mbezi, etc.) are accepted. The tighter polygon above is preserved
+ * for future sub-zone logic (Phase 2).
  *
  * @param {number} lat  Customer latitude  (e.g. -6.8160)
  * @param {number} lng  Customer longitude (e.g.  39.2803)
@@ -96,7 +45,10 @@ function isPointInPolygon(lat, lng, polygon) {
 export function isLocationDeliverable(lat, lng) {
   if (typeof lat !== 'number' || typeof lng !== 'number') return false;
   if (!isFinite(lat) || !isFinite(lng)) return false;
-  return isPointInPolygon(lat, lng, DAR_ES_SALAAM_ZONE);
+  return (
+    lat >= DSM_BOUNDS.latMin && lat <= DSM_BOUNDS.latMax &&
+    lng >= DSM_BOUNDS.lngMin && lng <= DSM_BOUNDS.lngMax
+  );
 }
 
 /**

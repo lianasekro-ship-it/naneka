@@ -7,8 +7,10 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import api from '../lib/api.js';
 import { NanekaLogo } from './Storefront.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 
 // Statuses a driver needs to act on
 const PENDING_STATUSES   = ['pending_payment', 'paid', 'processing', 'out_for_delivery'];
@@ -41,6 +43,9 @@ function openMap(address) {
 const REFRESH_MS = 20_000;
 
 export default function DriverApp() {
+  const { signOut } = useAuth();
+  const navigate    = useNavigate();
+
   const [orders,     setOrders]     = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState(null);
@@ -59,7 +64,7 @@ export default function DriverApp() {
     if (manual) setRefreshing(true);
     try {
       // /pending returns only actionable orders — paid, processing, out_for_delivery, pending_payment
-      const { data } = await axios.get('/api/v1/orders/pending', { headers: authHeaders });
+      const { data } = await api.get('/api/v1/orders/pending', { headers: authHeaders });
       setOrders(data.orders ?? []);
       setLastSync(new Date());
       setError(null);
@@ -81,7 +86,7 @@ export default function DriverApp() {
     setBusy(b => ({ ...b, [orderId]: true }));
     setActionErr(e => ({ ...e, [orderId]: null }));
     try {
-      await axios.patch(
+      await api.patch(
         `/api/v1/orders/${orderId}/status`,
         { status: nextStatus },
         { headers: authHeaders }
@@ -149,6 +154,25 @@ export default function DriverApp() {
             <button className="btn btn-ghost" onClick={() => setShowToken(t => !t)}
               style={{ fontSize: '0.75rem', padding: '0.4rem 0.75rem' }}>
               🔑 Token
+            </button>
+            <button
+              onClick={async () => { await signOut(); navigate('/login', { replace: true }); }}
+              style={{
+                minWidth: '44px', minHeight: '44px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem',
+                padding: '0.4rem 0.875rem',
+                fontSize: '0.75rem', fontWeight: 700,
+                background: 'transparent',
+                color: '#EF4444',
+                border: '1px solid rgba(239,68,68,0.35)',
+                borderRadius: '8px', cursor: 'pointer',
+                fontFamily: 'var(--font-sans)',
+                transition: 'background 0.15s, border-color 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; e.currentTarget.style.borderColor = '#EF4444'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.35)'; }}
+            >
+              ⎋ Logout
             </button>
           </div>
         </div>

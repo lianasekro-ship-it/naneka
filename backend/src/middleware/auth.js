@@ -2,16 +2,18 @@ import fs from 'fs';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 
-// Keys are loaded once at startup.
-// Wrapped in try/catch so a missing key file does not crash the server
-// during local development before keys have been generated.
+// Keys loaded once at startup.
+// Priority: inline env var content (Vercel) → file path (local dev).
 let publicKey = null;
 try {
-  if (env.JWT_PUBLIC_KEY_PATH) {
+  if (env.JWT_PUBLIC_KEY) {
+    // Inline PEM: replace literal \n with real newlines (common in env var editors)
+    publicKey = env.JWT_PUBLIC_KEY.replace(/\\n/g, '\n');
+  } else if (env.JWT_PUBLIC_KEY_PATH) {
     publicKey = fs.readFileSync(env.JWT_PUBLIC_KEY_PATH);
   }
 } catch (err) {
-  console.warn(`[auth] Could not load JWT public key from "${env.JWT_PUBLIC_KEY_PATH}": ${err.message}`);
+  console.warn(`[auth] Could not load JWT public key: ${err.message}`);
   console.warn('[auth] Auth is running in OPEN mode — all requests are permitted. Generate keys before going live.');
 }
 

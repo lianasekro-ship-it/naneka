@@ -1,17 +1,28 @@
 import { Routes, Route } from 'react-router-dom';
-import { CartProvider } from './context/CartContext.jsx';
-import CartDrawer from './components/CartDrawer.jsx';
-import Storefront from './pages/Storefront.jsx';
-import ProductDetail from './pages/ProductDetail.jsx';
-import Checkout from './pages/Checkout.jsx';
-import OrderTracking from './pages/OrderTracking.jsx';
-import AdminDashboard from './pages/AdminDashboard.jsx';
-import SalesDashboard from './pages/SalesDashboard.jsx';
-import DriverApp from './pages/DriverApp.jsx';
-import StudioApp from './pages/StudioApp.jsx';
-import PaymentResult from './pages/PaymentResult.jsx';
-import CheckoutModal from './components/CheckoutModal.jsx';
 import { useState } from 'react';
+
+import { CartProvider }  from './context/CartContext.jsx';
+import { AuthProvider }  from './context/AuthContext.jsx';
+import ProtectedRoute    from './components/ProtectedRoute.jsx';
+import CartDrawer        from './components/CartDrawer.jsx';
+import CheckoutModal     from './components/CheckoutModal.jsx';
+
+import Storefront        from './pages/Storefront.jsx';
+import ProductDetail     from './pages/ProductDetail.jsx';
+import CategoryPage      from './pages/CategoryPage.jsx';
+import Checkout          from './pages/Checkout.jsx';
+import OrderTracking     from './pages/OrderTracking.jsx';
+import PaymentResult     from './pages/PaymentResult.jsx';
+import OrderConfirmed    from './pages/OrderConfirmed.jsx';
+import Login             from './pages/Login.jsx';
+import Terms             from './pages/Terms.jsx';
+import Returns           from './pages/Returns.jsx';
+import Privacy           from './pages/Privacy.jsx';
+import About             from './pages/About.jsx';
+import AdminDashboard    from './pages/AdminDashboard.jsx';
+import SalesDashboard    from './pages/SalesDashboard.jsx';
+import DriverApp         from './pages/DriverApp.jsx';
+import StudioApp         from './pages/StudioApp.jsx';
 
 function NotFound() {
   return (
@@ -41,17 +52,36 @@ function AppShell() {
     <>
       <CartDrawer onCheckout={setCheckoutProduct} />
       <Routes>
+        {/* ── Public routes ─────────────────────────────────────────── */}
         <Route path="/"                        element={<Storefront />} />
         <Route path="/products/:id"            element={<ProductDetail />} />
+        <Route path="/category/:slug"          element={<CategoryPage />} />
         <Route path="/checkout"                element={<Checkout />} />
+        <Route path="/checkout/payment-result" element={<PaymentResult />} />
+        <Route path="/order-confirmed"         element={<OrderConfirmed />} />
         <Route path="/track"                   element={<OrderTracking />} />
         <Route path="/orders/:orderId/track"   element={<OrderTracking />} />
-        <Route path="/admin"                   element={<AdminDashboard />} />
-        <Route path="/admin/sales"             element={<SalesDashboard />} />
-        <Route path="/driver"                  element={<DriverApp />} />
-        <Route path="/studio"                  element={<StudioApp />} />
-        <Route path="/checkout/payment-result" element={<PaymentResult />} />
-        <Route path="*"                        element={<NotFound />} />
+        <Route path="/login"                   element={<Login />} />
+        <Route path="/terms"                   element={<Terms />} />
+        <Route path="/returns"                 element={<Returns />} />
+        <Route path="/privacy"                 element={<Privacy />} />
+        <Route path="/about"                   element={<About />} />
+
+        {/* ── Protected routes (require Supabase auth) ─────────────── */}
+        <Route path="/admin" element={
+          <ProtectedRoute><AdminDashboard /></ProtectedRoute>
+        } />
+        <Route path="/admin/sales" element={
+          <ProtectedRoute><SalesDashboard /></ProtectedRoute>
+        } />
+        <Route path="/driver" element={
+          <ProtectedRoute><DriverApp /></ProtectedRoute>
+        } />
+        <Route path="/studio" element={
+          <ProtectedRoute><StudioApp /></ProtectedRoute>
+        } />
+
+        <Route path="*" element={<NotFound />} />
       </Routes>
       {checkoutProduct && (
         <CheckoutModal product={checkoutProduct} onClose={() => setCheckoutProduct(null)} />
@@ -62,8 +92,10 @@ function AppShell() {
 
 export default function App() {
   return (
-    <CartProvider>
-      <AppShell />
-    </CartProvider>
+    <AuthProvider>
+      <CartProvider>
+        <AppShell />
+      </CartProvider>
+    </AuthProvider>
   );
 }

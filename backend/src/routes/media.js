@@ -31,6 +31,8 @@ import multer  from 'multer';
 import { fileURLToPath } from 'url';
 
 import { processImageBuffer, buildOutputFilename } from '../services/media/imageProcessor.js';
+import { uploadAndProcess, uploadRaw } from '../services/media/cloudinaryService.js';
+import { extractProductInfo } from '../services/media/geminiService.js';
 import { createError } from '../middleware/errorHandler.js';
 
 const router = Router();
@@ -38,10 +40,19 @@ const router = Router();
 // ─── Upload directory setup ───────────────────────────────────────────────────
 
 const __dirname   = path.dirname(fileURLToPath(import.meta.url));
-const UPLOAD_DIR  = path.resolve(__dirname, '../../uploads/raw');
-const OUTPUT_DIR  = path.resolve(__dirname, '../../uploads/processed');
 
-[UPLOAD_DIR, OUTPUT_DIR].forEach((d) => fs.mkdirSync(d, { recursive: true }));
+// Vercel's serverless filesystem is read-only except for /tmp.
+// Use /tmp when running on Vercel, local project dirs otherwise.
+const _base      = process.env.VERCEL ? '/tmp/naneka' : path.resolve(__dirname, '../../uploads');
+const UPLOAD_DIR = path.join(_base, 'raw');
+const OUTPUT_DIR = path.join(_base, 'processed');
+
+try {
+  [UPLOAD_DIR, OUTPUT_DIR].forEach((d) => fs.mkdirSync(d, { recursive: true }));
+} catch (err) {
+  // Log but don't crash — media upload routes will fail gracefully if dirs are unavailable.
+  console.warn('[media] Could not create upload directories:', err.message);
+}
 
 // ─── Multer config ────────────────────────────────────────────────────────────
 
@@ -58,6 +69,26 @@ const upload = multer({
       cb(createError(415, `Unsupported image type: ${file.mimetype}. Use JPEG, PNG, or WebP.`));
     }
   },
+});
+
+// ─── POST /api/v1/media/upload ───────────────────────────────────────────────
+//
+// Simple upload: accepts a file in the "file" form field, uploads to Cloudinary,
+// returns { url, publicId }.  Used by Admin Dashboard gallery + category images.
+
+router.post('/upload', upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return next(createError(400, 'No file uploaded. Send the image in a "file" form field.'));
+    }
+    const { buffer, mimetype } = req.file;
+    const result = await uploadRaw(buffer, mimetype);
+    console.log(`[media/upload] Uploaded: ${result.url}`);
+    return res.json(result);
+  } catch (err) {
+    console.error('[media/upload] Error:', err.message);
+    next(err);
+  }
 });
 
 // ─── POST /api/v1/media/process ──────────────────────────────────────────────
@@ -114,6 +145,40 @@ router.post('/process', upload.single('image'), async (req, res, next) => {
     });
 
     return res.status(200).send(result.buffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /api/v1/media/ai-process ───────────────────────────────────────────
+//
+// Runs two jobs in parallel:
+//   • Cloudinary: upload image → bg removal + Naneka logo overlay → return URL
+//   • Gemini 1.5 Flash: analyse image → extract product_name, description_en, description_sw
+//
+// Returns JSON: { processedUrl, rawUrl, product_name, description_en, description_sw }
+
+router.post('/ai-process', upload.single('image'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return next(createError(400, 'No image uploaded. Send the file in an "image" form field.'));
+    }
+
+    const { buffer, mimetype } = req.file;
+
+    const [cloudinary, gemini] = await Promise.all([
+      uploadAndProcess(buffer, mimetype),
+      extractProductInfo(buffer, mimetype),
+    ]);
+
+    return res.json({
+      processedUrl:   cloudinary.processedUrl,
+      rawUrl:         cloudinary.rawUrl,
+      publicId:       cloudinary.publicId,
+      product_name:   gemini.product_name,
+      description_en: gemini.description_en,
+      description_sw: gemini.description_sw,
+    });
   } catch (err) {
     next(err);
   }

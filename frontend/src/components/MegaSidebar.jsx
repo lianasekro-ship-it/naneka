@@ -1,37 +1,9 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useCart } from '../context/CartContext.jsx';
+import { CATEGORIES } from '../data/products.js';
 
-export const CATEGORIES = [
-  {
-    id: 'electronics', icon: '📺', label: 'Electronics',
-    subs: ['TVs & Monitors', 'Fridges & Freezers', 'Home Theater', 'Washing Machines', 'Microwaves', 'Air Conditioners'],
-  },
-  {
-    id: 'clothing', icon: '👗', label: 'Women, Kids & Men',
-    subs: ["Women's Dresses", "Women's Shoes", "Men's Shirts", "Men's Trousers", 'Kids Clothing', 'Kids Shoes', 'School Bags'],
-  },
-  {
-    id: 'kitchen', icon: '🍳', label: 'Kitchen & Home',
-    subs: ['Gas Stoves', 'Electric Stoves', 'Pots & Cookware', 'Blenders & Mixers', 'Pressure Cookers', 'Kitchen Tools'],
-  },
-  {
-    id: 'watches', icon: '⌚', label: 'Watches & Handbags',
-    subs: ["Men's Watches", "Ladies' Watches", 'Handbags', 'Wallets & Purses', 'Sunglasses', 'Belts'],
-  },
-  {
-    id: 'furniture', icon: '🛋️', label: 'Furniture',
-    subs: ['Sofas & Couches', 'Beds & Mattresses', 'Dining Sets', 'Wardrobes', 'Office Chairs', 'Storage & Shelves'],
-  },
-  {
-    id: 'made-in-tz', icon: '🇹🇿', label: 'Made in Tanzania',
-    subs: ['Handcrafted Cookware', 'Local Textiles', 'Kiondo Baskets', 'Artisan Woodwork', 'Hardware Tools', 'Building Materials'],
-  },
-  {
-    id: 'phones', icon: '📱', label: 'Phones & Accessories',
-    subs: ['Infinix Phones', 'Tecno Phones', 'Samsung', 'Phone Cases', 'Chargers & Cables', 'Earphones & Headsets'],
-  },
-];
+export { CATEGORIES };
 
 /* ─── Shared list of categories (desktop + mobile drawer) ───────────────── */
 function CategoryList({ onNavigate, defaultExpanded = 'kitchen' }) {

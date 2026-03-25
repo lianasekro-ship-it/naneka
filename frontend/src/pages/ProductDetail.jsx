@@ -1,18 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../lib/api.js';
 import { getProductById } from '../data/products.js';
 import { useCart } from '../context/CartContext.jsx';
 import CheckoutModal from '../components/CheckoutModal.jsx';
 import { NanekaLogo } from './Storefront.jsx';
 
-const NANEKA_WHATSAPP = '255700000000';
-const DELIVERY_FEE    = 3_500;
+const DELIVERY_FEE = 3_500;
 
 function formatTZS(n) { return 'TZS\u00A0' + Number(n).toLocaleString('en-TZ'); }
-function buildWAUrl(name, price) {
-  return `https://wa.me/${NANEKA_WHATSAPP}?text=${encodeURIComponent(`Hi Naneka, I want to buy ${name} for ${formatTZS(price)}. Is it available?`)}`;
-}
 
 /* ─── WhatsApp icon ───────────────────────────────────────────────────────── */
 function WAIcon() {
@@ -69,12 +65,12 @@ export default function ProductDetail() {
   const [selectedImg,    setSelectedImg]    = useState(0);
   const [qty,            setQty]            = useState(1);
   const [addedFeedback,  setAddedFeedback]  = useState(false);
-  const [checkoutOpen,   setCheckoutOpen]   = useState(false);
+  const [checkoutMode,   setCheckoutMode]   = useState(null); // null | 'checkout' | 'whatsapp'
 
   // Fetch product
   useEffect(() => {
     setApiLoading(true);
-    axios.get(`/api/v1/products/${id}`)
+    api.get(`/api/v1/products/${id}`)
       .then(({ data }) => {
         const raw = data.product ?? data;
         setProduct(normaliseProduct(raw));
@@ -86,7 +82,7 @@ export default function ProductDetail() {
   // Fetch reviews
   useEffect(() => {
     setReviews(null);
-    axios.get(`/api/v1/products/${id}/reviews`)
+    api.get(`/api/v1/products/${id}/reviews`)
       .then(({ data }) => setReviews(data.reviews ?? data ?? []))
       .catch(() => setReviews([]));
   }, [id]);
@@ -94,7 +90,7 @@ export default function ProductDetail() {
   // Fetch similar products
   useEffect(() => {
     setSimilarProducts([]);
-    axios.get(`/api/v1/products/${id}/similar`)
+    api.get(`/api/v1/products/${id}/similar`)
       .then(({ data }) => {
         const raw = data.products ?? data ?? [];
         setSimilarProducts(Array.isArray(raw) ? raw.map(normaliseProduct) : []);
@@ -196,15 +192,10 @@ export default function ProductDetail() {
 
           {/* ── Two-column desktop layout ────────────────────────────────── */}
           <div className="container" style={{ padding: '0 1.5rem 4rem' }}>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0, 44%) minmax(0, 1fr)',
-              gap: '3rem',
-              alignItems: 'flex-start',
-            }}>
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,44%)_minmax(0,1fr)] gap-8 lg:gap-12 items-start">
 
               {/* ── LEFT: Sticky image gallery ──────────────────────────── */}
-              <div style={{ position: 'sticky', top: '88px' }}>
+              <div className="lg:sticky lg:top-[88px]">
                 <div style={{
                   borderRadius: 'var(--radius-lg)', overflow: 'hidden',
                   background: '#F5F2E8', aspectRatio: '4/3',
@@ -302,9 +293,10 @@ export default function ProductDetail() {
                     borderRadius: 'var(--radius-sm)', padding: '0.875rem 1rem',
                     display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
                     border: '1px solid rgba(212,175,55,0.2)',
+                    overflow: 'hidden',
                   }}>
                     <span style={{ fontSize: '1.375rem', flexShrink: 0 }}>🏷️</span>
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--c-gold)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.3rem' }}>
                         Price Match Guarantee
                       </div>
@@ -343,20 +335,21 @@ export default function ProductDetail() {
                 </div>
 
                 {/* Buy Now */}
-                <button onClick={() => setCheckoutOpen(true)} disabled={!stockOk} className="btn btn-gold btn-full"
+                <button onClick={() => setCheckoutMode('checkout')} disabled={!stockOk} className="btn btn-gold btn-full"
                   style={{ padding: '0.95rem', fontSize: '0.9rem', letterSpacing: '0.04em' }}>
                   Buy Now — {formatTZS(product.price + DELIVERY_FEE)} total →
                 </button>
 
-                {/* WhatsApp */}
-                <a
-                  href={buildWAUrl(product.name, product.price)} target="_blank" rel="noopener noreferrer"
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.625rem', padding: '0.8rem', border: '1.5px solid #25D366', borderRadius: 'var(--radius-sm)', background: 'transparent', color: '#128C3E', textDecoration: 'none', fontWeight: 600, fontSize: '0.875rem', fontFamily: 'var(--font-sans)', transition: 'background 0.18s, color 0.18s' }}
+                {/* Order via WhatsApp */}
+                <button
+                  onClick={() => setCheckoutMode('whatsapp')}
+                  disabled={!stockOk}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.625rem', padding: '0.8rem', border: '1.5px solid #25D366', borderRadius: 'var(--radius-sm)', background: 'transparent', color: '#128C3E', fontWeight: 600, fontSize: '0.875rem', fontFamily: 'var(--font-sans)', cursor: 'pointer', transition: 'background 0.18s, color 0.18s' }}
                   onMouseEnter={e => { e.currentTarget.style.background = '#25D366'; e.currentTarget.style.color = '#fff'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#128C3E'; }}
                 >
                   <WAIcon /> Order via WhatsApp
-                </a>
+                </button>
 
                 {/* ── Specs ─────────────────────────────────────────────── */}
                 {product.specs?.length > 0 && (
@@ -395,8 +388,8 @@ export default function ProductDetail() {
         </main>
       </div>
 
-      {checkoutOpen && (
-        <CheckoutModal product={product} onClose={() => setCheckoutOpen(false)} />
+      {checkoutMode && (
+        <CheckoutModal product={product} mode={checkoutMode} onClose={() => setCheckoutMode(null)} />
       )}
     </>
   );

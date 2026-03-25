@@ -1,25 +1,36 @@
 import { useState, useCallback, useRef, useEffect, Fragment } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import api from '../lib/api.js';
 import { useCart } from '../context/CartContext.jsx';
-import { PRODUCTS, BEST_SELLERS, NEW_ARRIVALS, BULK_DEALS, MADE_IN_TZ } from '../data/products.js';
+import { PRODUCTS, BEST_SELLERS, NEW_ARRIVALS, BULK_DEALS, MADE_IN_TZ, CATEGORIES } from '../data/products.js';
 import ProductCard from '../components/ProductCard.jsx';
 import MegaSidebar from '../components/MegaSidebar.jsx';
 import CheckoutModal from '../components/CheckoutModal.jsx';
 
 /* ─── Main Page ───────────────────────────────────────────────────────────── */
-// Maps a section rule_type to a product array from local data
+// Resolves which products to show for a dynamic section.
+// Priority: products already resolved by the backend API, then local catalogue fallback.
 function resolveSectionProducts(section, hiddenIds) {
-  const vis = (arr) => arr.filter(p => !hiddenIds.has(String(p.id)));
-  switch (section.rule_type) {
+  const vis = (arr) => (arr ?? []).filter(p => !hiddenIds.has(String(p.id)));
+
+  // Backend pre-resolves products into section.products — use them when available.
+  if (Array.isArray(section.products) && section.products.length > 0) {
+    return vis(section.products);
+  }
+
+  // Local fallback (used when API is unavailable or section has no DB products yet).
+  // Also handles the algorithmic_rule.category_slug field from the backend schema.
+  const rule      = section.algorithmic_rule ?? {};
+  const ruleType  = section.rule_type ?? rule.rule_type ?? '';
+  const ruleValue = section.rule_value ?? rule.category_slug ?? '';
+
+  switch (ruleType) {
     case 'best_sellers': return vis(BEST_SELLERS);
     case 'new_arrivals': return vis(NEW_ARRIVALS);
     case 'made_in_tz':   return vis(MADE_IN_TZ);
     case 'bulk_deals':   return vis(BULK_DEALS);
     case 'category':
-      return vis(PRODUCTS).filter(p => p.category?.toLowerCase() === section.rule_value?.toLowerCase());
-    case 'tag':
-      return vis(PRODUCTS).filter(p => Array.isArray(p.tags) && p.tags.includes(section.rule_value));
+      return vis(PRODUCTS).filter(p => p.category?.toLowerCase() === ruleValue.toLowerCase());
     default:
       return vis(PRODUCTS).slice(0, 12);
   }
@@ -27,6 +38,7 @@ function resolveSectionProducts(section, hiddenIds) {
 
 export default function Storefront() {
   const { add, setDrawerOpen } = useCart();
+  const navigate = useNavigate();
   const [selectedProduct,  setSelectedProduct]  = useState(null);
   const [recentlyViewed,   setRecentlyViewed]   = useState([]);
   const [toast,            setToast]            = useState(null);
@@ -39,11 +51,11 @@ export default function Storefront() {
 
   // Fetch active sections and product visibility from API (silently falls back if unavailable)
   useEffect(() => {
-    axios.get('/api/v1/site-sections')
+    api.get('/api/v1/site-sections')
       .then(({ data }) => { if (data.sections?.length) setDynamicSections(data.sections); })
       .catch(() => {});
 
-    axios.get('/api/v1/products?limit=500')
+    api.get('/api/v1/products?limit=500')
       .then(({ data }) => {
         const hidden = new Set(
           (data.products ?? []).filter(p => p.is_visible === false).map(p => String(p.id))
@@ -74,28 +86,22 @@ export default function Storefront() {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   }
 
-  function handleSidebarNav(catId) {
-    const map = {
-      'made-in-tz': 'made-in-tz',
-      kitchen:      'best-sellers',
-      electronics:  'new-arrivals',
-      clothing:     'new-arrivals',
-      watches:      'new-arrivals',
-      furniture:    'bulk-deals',
-      phones:       'best-sellers',
-    };
-    scrollTo(map[catId] ?? 'best-sellers');
+  function handleSidebarNav(catId, sub) {
+    const url = sub
+      ? `/category/${catId}?sub=${encodeURIComponent(sub)}`
+      : `/category/${catId}`;
+    navigate(url);
   }
 
   const cardProps = { onBuyNow: buyNow, onAddToCart: addToCart };
-  const vis = (arr) => arr.filter(p => !hiddenIds.has(String(p.id)));
+  const vis = (arr) => (arr ?? []).filter(p => !hiddenIds.has(String(p.id)));
 
   return (
     <>
       <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column' }}>
         <TopUtilityBar />
         <SiteHeader onOpenCategories={() => setMobileCatOpen(true)} />
-        <CategoryMegaBar onScrollTo={scrollTo} />
+        <CategoryMegaBar />
 
         {/* Sidebar + content wrapper */}
         <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1 }}>
@@ -135,7 +141,7 @@ export default function Storefront() {
                 }
                 return (
                   <Fragment key={section.id}>
-                    {i === 1 && <ShopByCategorySection onScrollTo={scrollTo} />}
+                    {i === 1 && <ShopByCategorySection />}
                     {i === 2 && <BrandScrollerSection />}
                     {carousel}
                   </Fragment>
@@ -144,7 +150,7 @@ export default function Storefront() {
             ) : (
               <>
                 <ProductCarousel id="best-sellers" eyebrow="Kariakoo Market Picks" title="Best Sellers" titleAccent="This Week" products={vis(BEST_SELLERS)} {...cardProps} />
-                <ShopByCategorySection onScrollTo={scrollTo} />
+                <ShopByCategorySection />
                 <ProductCarousel id="new-arrivals" eyebrow="Just Landed" title="New" titleAccent="Arrivals" products={vis(NEW_ARRIVALS)} bg="#F8F6F0" {...cardProps} />
                 <BrandScrollerSection />
                 <MadeInTanzaniaSection id="made-in-tz" products={vis(MADE_IN_TZ)} {...cardProps} />
@@ -227,7 +233,7 @@ function LiveSearchBar() {
     setBusy(true);
     const t = setTimeout(async () => {
       try {
-        const { data } = await axios.get(`/api/v1/products/search?q=${encodeURIComponent(query.trim())}&limit=8`);
+        const { data } = await api.get(`/api/v1/products/search?q=${encodeURIComponent(query.trim())}&limit=8`);
         setResults(data.products ?? data.results ?? []);
         setOpen(true);
       } catch {
@@ -390,21 +396,22 @@ function SiteHeader({ onOpenCategories }) {
 }
 
 /* ─── Category Mega Bar ───────────────────────────────────────────────────── */
-function CategoryMegaBar({ onScrollTo }) {
+function CategoryMegaBar() {
+  const navigate = useNavigate();
   const cats = [
-    { icon: '📺', label: 'Electronics',        section: 'new-arrivals'  },
-    { icon: '👗', label: 'Women, Kids & Men',  section: 'new-arrivals'  },
-    { icon: '🍳', label: 'Kitchen & Home',     section: 'best-sellers'  },
-    { icon: '⌚', label: 'Watches & Bags',     section: 'new-arrivals'  },
-    { icon: '🛋️', label: 'Furniture',          section: 'bulk-deals'    },
-    { icon: '🇹🇿', label: 'Made in Tanzania',  section: 'made-in-tz'    },
-    { icon: '📱', label: 'Phones & Accessories', section: 'best-sellers' },
+    { icon: '📺', label: 'Electronics',          slug: 'electronics'  },
+    { icon: '👗', label: 'Women, Kids & Men',    slug: 'clothing'     },
+    { icon: '🍳', label: 'Kitchen & Home',       slug: 'kitchen'      },
+    { icon: '⌚', label: 'Watches & Bags',       slug: 'watches'      },
+    { icon: '🛋️', label: 'Furniture',            slug: 'furniture'    },
+    { icon: '🇹🇿', label: 'Made in Tanzania',    slug: 'made-in-tz'   },
+    { icon: '📱', label: 'Phones & Accessories', slug: 'phones'       },
   ];
   return (
     <nav style={{ background: '#fff', borderBottom: '2px solid #F0EDE5', overflowX: 'auto', scrollbarWidth: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content', margin: '0 auto', maxWidth: '1140px', padding: '0 1.5rem' }}>
-        {cats.map(({ icon, label, section }) => (
-          <button key={label} onClick={() => onScrollTo(section)} style={{
+        {cats.map(({ icon, label, slug }) => (
+          <button key={slug} onClick={() => navigate(`/category/${slug}`)} style={{
             display: 'flex', alignItems: 'center', gap: '0.5rem',
             padding: '0.875rem 1.25rem', border: 'none', borderBottom: '2px solid transparent',
             background: 'none', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600,
@@ -607,7 +614,7 @@ function ProductCarousel({ id, eyebrow, title, titleAccent, products, onBuyNow, 
         ref={scrollRef}
         style={{ display: 'flex', gap: '1rem', overflowX: 'auto', paddingRight: '2rem', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        {products.map(p => <CompactProductCard key={p.id} product={p} onBuyNow={onBuyNow} onAddToCart={onAddToCart} />)}
+        {(products ?? []).map(p => <CompactProductCard key={p.id} product={p} onBuyNow={onBuyNow} onAddToCart={onAddToCart} />)}
       </div>
     </section>
   );
@@ -635,36 +642,41 @@ function catSection(slug = '') {
   return 'best-sellers';
 }
 
-/* ─── Shop by Category (horizontal icon slider — live from API only) ─────── */
-function ShopByCategorySection({ onScrollTo }) {
-  const scrollRef                  = useRef(null);
-  const [cats,    setCats]         = useState([]);
-  const [catLoad, setCatLoad]      = useState(true);
+/* ─── Shop by Category (horizontal icon slider) ──────────────────────────── */
+function ShopByCategorySection() {
+  const navigate  = useNavigate();
+  const scrollRef = useRef(null);
+  const [cats, setCats] = useState([]);
+
+  // Build local fallback from the static CATEGORIES array
+  function buildLocalCats() {
+    return CATEGORIES.map(c => ({ icon: c.icon, imageUrl: null, label: c.label, slug: c.id }));
+  }
 
   useEffect(() => {
-    axios.get('/api/v1/categories/tree')
+    api.get('/api/v1/categories/tree')
       .then(({ data }) => {
         const raw = data.categories ?? data;
-        if (Array.isArray(raw)) {
+        if (Array.isArray(raw) && raw.length > 0) {
           setCats(raw.map(c => ({
             icon:     catEmoji(c.name, c.slug),
             imageUrl: c.image_url ?? c.imageUrl ?? null,
             label:    c.name,
             slug:     c.slug,
           })));
+        } else {
+          setCats(buildLocalCats());
         }
       })
-      .catch(() => {})
-      .finally(() => setCatLoad(false));
+      .catch(() => setCats(buildLocalCats()));
   }, []);
 
   function scroll(dir) {
     scrollRef.current?.scrollBy({ left: dir * 400, behavior: 'smooth' });
   }
 
-  // Don't render the section at all until we know what the API has
-  if (catLoad) return null;
-  if (cats.length === 0) return null;
+  // Immediately render local cats while API loads (no more "wait and hide")
+  const displayCats = cats.length > 0 ? cats : buildLocalCats();
 
   return (
     <section id="categories" style={{ padding: '1.5rem 0 1.5rem 2rem', background: '#fff', borderTop: '1px solid var(--c-border)', borderBottom: '1px solid var(--c-border)' }}>
@@ -676,8 +688,8 @@ function ShopByCategorySection({ onScrollTo }) {
         </div>
       </div>
       <div ref={scrollRef} style={{ display: 'flex', gap: '1.25rem', overflowX: 'auto', paddingRight: '2rem', paddingBottom: '0.5rem', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-        {cats.map(cat => (
-          <button key={cat.slug ?? cat.label} onClick={() => onScrollTo(catSection(cat.slug))}
+        {displayCats.map(cat => (
+          <button key={cat.slug ?? cat.label} onClick={() => navigate(`/category/${cat.slug}`)}
             style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0, transition: 'transform 0.18s' }}
             onMouseEnter={e => (e.currentTarget.style.transform = 'translateY(-3px)')}
             onMouseLeave={e => (e.currentTarget.style.transform = 'none')}>
@@ -720,7 +732,7 @@ function MadeInTanzaniaSection({ id, products, onBuyNow, onAddToCart }) {
         </div>
       </div>
       <div ref={scrollRef} style={{ display: 'flex', gap: '1rem', overflowX: 'auto', paddingRight: '2rem', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-        {products.map(p => <CompactProductCard key={p.id} product={p} onBuyNow={onBuyNow} onAddToCart={onAddToCart} />)}
+        {(products ?? []).map(p => <CompactProductCard key={p.id} product={p} onBuyNow={onBuyNow} onAddToCart={onAddToCart} />)}
       </div>
     </section>
   );
@@ -732,7 +744,7 @@ function BrandScrollerSection() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    axios.get('/api/v1/brands')
+    api.get('/api/v1/brands')
       .then(({ data }) => {
         const raw = data.brands ?? data ?? [];
         if (Array.isArray(raw)) setBrands(raw);
@@ -788,7 +800,7 @@ function BulkDealsCarousel({ id, products, onBuyNow, onAddToCart }) {
         </div>
       </div>
       <div ref={scrollRef} style={{ display: 'flex', gap: '1.25rem', overflowX: 'auto', paddingRight: '2rem', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-        {products.map(p => <BulkDealCard key={p.id} product={p} onBuyNow={onBuyNow} onAddToCart={onAddToCart} />)}
+        {(products ?? []).map(p => <BulkDealCard key={p.id} product={p} onBuyNow={onBuyNow} onAddToCart={onAddToCart} />)}
       </div>
     </section>
   );
@@ -804,8 +816,8 @@ function BulkDealCard({ product, onBuyNow, onAddToCart }) {
       <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.125rem', fontWeight: 700, color: '#fff', lineHeight: 1.3, marginBottom: '0.625rem' }}>{product.name}</h3>
       <p style={{ fontSize: '0.84rem', color: 'rgba(255,255,255,0.45)', lineHeight: 1.6, marginBottom: '1.25rem' }}>{product.description}</p>
       <div style={{ marginBottom: '1rem' }}>
-        <div style={{ fontSize: '1.375rem', fontWeight: 800, color: 'var(--c-gold)' }}>TZS&nbsp;{product.price.toLocaleString('en-TZ')}</div>
-        <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)', marginTop: '0.2rem' }}>Save TZS&nbsp;{product.bulkSaving?.toLocaleString('en-TZ')} · {product.bulkQty} units</div>
+        <div style={{ fontSize: '1.375rem', fontWeight: 800, color: 'var(--c-gold)' }}>TZS&nbsp;{(product.price ?? 0).toLocaleString('en-TZ')}</div>
+        <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)', marginTop: '0.2rem' }}>Save TZS&nbsp;{(product.bulkSaving ?? 0).toLocaleString('en-TZ')} · {product.bulkQty} units</div>
       </div>
       <div style={{ display: 'flex', gap: '0.625rem' }}>
         <button className="btn btn-gold" onClick={() => onBuyNow(product)} style={{ flex: 1, padding: '0.65rem', fontSize: '0.8rem' }}>Order Now</button>
@@ -855,12 +867,20 @@ function SiteFooter() {
           </p>
         </div>
         <div>
-          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--c-gold)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.875rem' }}>Categories</div>
+          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--c-gold)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.875rem' }}>Shop Categories</div>
           {cats.map(c => <div key={c} style={{ fontSize: '0.84rem', color: 'rgba(255,255,255,0.4)', marginBottom: '0.5rem', cursor: 'pointer', transition: 'color 0.15s' }} onMouseEnter={e => (e.currentTarget.style.color = 'var(--c-gold)')} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}>{c}</div>)}
         </div>
         <div>
-          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--c-gold)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.875rem' }}>Help</div>
-          {[['/track', 'Track Order']].map(([h, l]) => <a key={l} href={h} style={{ display: 'block', fontSize: '0.84rem', color: 'rgba(255,255,255,0.4)', marginBottom: '0.5rem', textDecoration: 'none', transition: 'color 0.15s' }} onMouseEnter={e => (e.currentTarget.style.color = 'var(--c-gold)')} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}>{l}</a>)}
+          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--c-gold)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.875rem' }}>Company Info</div>
+          {[
+            ['/about',   'About Us'],
+            ['/terms',   'Terms & Conditions'],
+            ['/returns', 'Returns Policy'],
+            ['/privacy', 'Privacy Policy'],
+            ['/track',   'Track My Order'],
+          ].map(([href, label]) => (
+            <a key={href} href={href} style={{ display: 'block', fontSize: '0.84rem', color: 'rgba(255,255,255,0.4)', marginBottom: '0.5rem', textDecoration: 'none', transition: 'color 0.15s' }} onMouseEnter={e => (e.currentTarget.style.color = 'var(--c-gold)')} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}>{label}</a>
+          ))}
         </div>
       </div>
       <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', maxWidth: '1140px', margin: '0 auto' }}>

@@ -15,8 +15,10 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import api from '../lib/api.js';
 import { NanekaLogo } from './Storefront.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const REFRESH_MS = 30_000;
@@ -116,6 +118,23 @@ function downloadCSV(orders) {
   URL.revokeObjectURL(url);
 }
 
+// ─── CSV export (products) ─────────────────────────────────────────────────────
+function downloadProductsCSV(products) {
+  const headers = ['Product ID', 'Name', 'SKU', 'Brand', 'Category', 'Price (TZS)', 'Cost Price', 'Stock', 'Visible', 'Added'];
+  const rows = products.map(p => [
+    p.id, p.name, p.sku ?? '', p.brand ?? '', p.category_slug ?? p.category ?? '',
+    p.price, p.cost_price ?? '', p.stock_qty ?? p.stock ?? '',
+    (p.is_visible ?? true) ? 'Yes' : 'No',
+    new Date(p.created_at ?? Date.now()).toLocaleDateString('en-GB'),
+  ]);
+  const csv  = [headers, ...rows].map(r => r.map(escapeCell).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `naneka-products-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ─── Shared table styles ───────────────────────────────────────────────────────
 const TH = { padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, color: 'var(--c-text-muted)', letterSpacing: '0.07em', textTransform: 'uppercase', background: '#FAFAFA', borderBottom: '2px solid var(--c-border)', whiteSpace: 'nowrap' };
 const TD = { padding: '0.875rem 1rem', borderBottom: '1px solid var(--c-border)', verticalAlign: 'middle', fontSize: '0.875rem' };
@@ -159,10 +178,13 @@ function GalleryImageRow({ value, onChange, onRemove, index }) {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const { data } = await axios.post('/api/v1/media/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const { data } = await api.post('/api/v1/media/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       onChange(data.url ?? data.file_url ?? data.path ?? '');
-    } catch {
-      setUploadErr('Upload failed. Paste URL instead.');
+    } catch (err) {
+      const status = err.response?.status;
+      const msg    = err.response?.data?.message ?? err.response?.data?.error ?? err.message ?? 'Unknown error';
+      console.error(`[AdminDashboard] Gallery upload failed — HTTP ${status ?? 'Network Error'}:`, msg, err);
+      setUploadErr(`Upload failed (${status ?? 'Network Error'}): ${msg}`);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -229,7 +251,7 @@ function ProAddForm({ categories, onSaved }) {
     if (isNaN(price) || price < 0) return setFormErr('Enter a valid price.');
     setSubmitting(true);
     try {
-      await axios.post('/api/v1/admin/products', {
+      await api.post('/api/v1/admin/products', {
         name: form.name.trim(), sku: form.sku.trim() || undefined, brand: form.brand.trim() || undefined,
         price, costPrice: form.costPrice ? parseFloat(form.costPrice) : undefined,
         stockQty: parseInt(form.stockQty, 10) || 0, taxRate: parseFloat(form.taxRate) || 18,
@@ -382,7 +404,7 @@ function ProductsPanel({ refreshKey = 0 }) {
     setError(null);
     try {
       const params = cat !== 'All' ? `?category=${encodeURIComponent(cat)}` : '';
-      const { data } = await axios.get(`/api/v1/admin/products${params}`);
+      const { data } = await api.get(`/api/v1/admin/products${params}`);
       const prods = data.products ?? [];
       setProducts(prods);
       // Seed visibility map from API data
@@ -397,7 +419,7 @@ function ProductsPanel({ refreshKey = 0 }) {
   }, [filterCat]);
 
   useEffect(() => {
-    axios.get('/api/v1/admin/categories')
+    api.get('/api/v1/admin/categories')
       .then(({ data }) => setCategories(data.categories ?? []))
       .catch(() => {});
   }, []);
@@ -408,7 +430,7 @@ function ProductsPanel({ refreshKey = 0 }) {
     if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
     setDeletingId(id);
     try {
-      await axios.delete(`/api/v1/admin/products/${id}`);
+      await api.delete(`/api/v1/admin/products/${id}`);
       setProducts(prev => prev.filter(p => p.id !== id));
     } catch (err) {
       alert(err.response?.data?.error?.message ?? 'Delete failed.');
@@ -423,7 +445,7 @@ function ProductsPanel({ refreshKey = 0 }) {
     // Optimistic update
     setVisMap(m => ({ ...m, [product.id]: newVal }));
     try {
-      await axios.patch(`/api/v1/admin/products/${product.id}`, { is_visible: newVal });
+      await api.patch(`/api/v1/admin/products/${product.id}`, { is_visible: newVal });
     } catch (err) {
       // Revert on error
       setVisMap(m => ({ ...m, [product.id]: !newVal }));
@@ -449,13 +471,21 @@ function ProductsPanel({ refreshKey = 0 }) {
               <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: 'var(--c-text-muted)' }}>{products.length} product{products.length !== 1 ? 's' : ''} {filterCat !== 'All' ? `in ${filterCat}` : 'across all categories'}</p>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             {['All', ...catNames].map(cat => (
               <button key={cat} onClick={() => setFilterCat(cat)}
                 style={{ ...btnSm, background: filterCat === cat ? 'var(--c-gold)' : 'transparent', color: filterCat === cat ? '#fff' : 'var(--c-text-muted)', border: filterCat === cat ? 'none' : '1px solid var(--c-border)' }}>
                 {cat}
               </button>
             ))}
+            {products.length > 0 && (
+              <button
+                onClick={() => downloadProductsCSV(products)}
+                style={{ ...btnSm, background: '#1A1A1A', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              >
+                ⬇ Export CSV
+              </button>
+            )}
           </div>
         </div>
 
@@ -563,7 +593,7 @@ function CategoriesPanel() {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await axios.get('/api/v1/admin/categories');
+      const { data } = await api.get('/api/v1/admin/categories');
       setCategories(data.categories ?? []);
     } catch (err) {
       setError(err.response?.data?.error?.message ?? err.message ?? 'Failed to load categories.');
@@ -584,7 +614,7 @@ function CategoriesPanel() {
     if (!name) return;
     setAddingMain(true);
     try {
-      await axios.post('/api/v1/admin/categories', { name, slug: slugify(name) });
+      await api.post('/api/v1/admin/categories', { name, slug: slugify(name) });
       setMainName('');
       await fetchCategories();
     } catch (err) {
@@ -600,7 +630,7 @@ function CategoriesPanel() {
     if (!subParentId || !name) return;
     setAddingSubTop(true);
     try {
-      await axios.post(`/api/v1/admin/categories/${subParentId}/subcategories`, { name, slug: slugify(name) });
+      await api.post(`/api/v1/admin/categories/${subParentId}/subcategories`, { name, slug: slugify(name) });
       setSubName('');
       setSubParentId('');
       await fetchCategories();
@@ -615,7 +645,7 @@ function CategoriesPanel() {
     if (!window.confirm(`Delete category "${name}"? All subcategories will also be removed.`)) return;
     setDeletingId(id);
     try {
-      await axios.delete(`/api/v1/admin/categories/${id}`);
+      await api.delete(`/api/v1/admin/categories/${id}`);
       setCategories(prev => prev.filter(c => c.id !== id));
     } catch (err) {
       alert(err.response?.data?.error?.message ?? 'Delete failed.');
@@ -629,7 +659,7 @@ function CategoriesPanel() {
     if (!name) return;
     setAddingSub(true);
     try {
-      await axios.post(`/api/v1/admin/categories/${catId}/subcategories`, { name, slug: slugify(name) });
+      await api.post(`/api/v1/admin/categories/${catId}/subcategories`, { name, slug: slugify(name) });
       setNewSubName('');
       setExpandedCat(null);
       await fetchCategories();
@@ -644,7 +674,7 @@ function CategoriesPanel() {
     if (!window.confirm(`Delete subcategory "${name}"?`)) return;
     setDeletingSubId(subId);
     try {
-      await axios.delete(`/api/v1/admin/subcategories/${subId}`);
+      await api.delete(`/api/v1/admin/subcategories/${subId}`);
       await fetchCategories();
     } catch (err) {
       alert(err.response?.data?.error?.message ?? 'Delete failed.');
@@ -664,7 +694,7 @@ function CategoriesPanel() {
     if (!name) return;
     setSavingEdit(true);
     try {
-      await axios.patch(`/api/v1/admin/categories/${catId}`, { name });
+      await api.patch(`/api/v1/admin/categories/${catId}`, { name });
       setCategories(prev => prev.map(c => c.id === catId ? { ...c, name } : c));
       setEditingId(null);
     } catch (err) {
@@ -678,7 +708,7 @@ function CategoriesPanel() {
     setTogglingId(cat.id);
     const newActive = !(cat.is_active ?? true);
     try {
-      await axios.patch(`/api/v1/admin/categories/${cat.id}`, { is_active: newActive });
+      await api.patch(`/api/v1/admin/categories/${cat.id}`, { is_active: newActive });
       setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, is_active: newActive } : c));
     } catch (err) {
       alert(err.response?.data?.error?.message ?? 'Failed to update visibility.');
@@ -693,14 +723,17 @@ function CategoriesPanel() {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const { data } = await axios.post('/api/v1/media/upload', fd);
+      const { data } = await api.post('/api/v1/media/upload', fd);
       const url = data.url ?? data.imageUrl ?? data.image_url;
       if (url) {
-        await axios.patch(`/api/v1/admin/categories/${catId}`, { image_url: url });
+        await api.patch(`/api/v1/admin/categories/${catId}`, { image_url: url });
         setCategories(prev => prev.map(c => c.id === catId ? { ...c, image_url: url } : c));
       }
     } catch (err) {
-      alert(err.response?.data?.error?.message ?? 'Image upload failed.');
+      const status = err.response?.status;
+      const msg    = err.response?.data?.message ?? err.response?.data?.error?.message ?? err.message ?? 'Unknown error';
+      console.error(`[AdminDashboard] Category upload failed — HTTP ${status ?? 'Network Error'}:`, msg, err);
+      alert(`Image upload failed (${status ?? 'Network Error'}): ${msg}`);
     } finally {
       setUploadingId(null);
     }
@@ -980,7 +1013,7 @@ function SectionsPanel() {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await axios.get('/api/v1/admin/site-sections');
+      const { data } = await api.get('/api/v1/admin/site-sections');
       setSections(data.sections ?? []);
     } catch (err) {
       setError(err.response?.data?.error?.message ?? err.message ?? 'Failed to load sections.');
@@ -1001,7 +1034,7 @@ function SectionsPanel() {
     if (rule?.needsValue && !form.rule_value.trim()) return setFormErr(`${rule.valueLabel} is required for this rule type.`);
     setSaving(true);
     try {
-      await axios.post('/api/v1/admin/site-sections', {
+      await api.post('/api/v1/admin/site-sections', {
         title:      form.title.trim(),
         rule_type:  form.rule_type,
         rule_value: form.rule_value.trim() || null,
@@ -1021,7 +1054,7 @@ function SectionsPanel() {
     if (!window.confirm(`Delete section "${title}"?`)) return;
     setDeletingId(id);
     try {
-      await axios.delete(`/api/v1/admin/site-sections/${id}`);
+      await api.delete(`/api/v1/admin/site-sections/${id}`);
       setSections(prev => prev.filter(s => s.id !== id));
     } catch (err) {
       alert(err.response?.data?.error?.message ?? 'Delete failed.');
@@ -1035,7 +1068,7 @@ function SectionsPanel() {
     setTogglingId(section.id);
     setSections(prev => prev.map(s => s.id === section.id ? { ...s, is_active: newVal } : s));
     try {
-      await axios.patch(`/api/v1/admin/site-sections/${section.id}`, { is_active: newVal });
+      await api.patch(`/api/v1/admin/site-sections/${section.id}`, { is_active: newVal });
     } catch (err) {
       setSections(prev => prev.map(s => s.id === section.id ? { ...s, is_active: !newVal } : s));
       alert(err.response?.data?.error?.message ?? 'Update failed.');
@@ -1155,7 +1188,7 @@ function OrdersPanel({ refreshKey = 0 }) {
   const fetchOrders = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     try {
-      const { data } = await axios.get('/api/v1/orders?limit=200');
+      const { data } = await api.get('/api/v1/orders?limit=200');
       setOrders(data.orders ?? []);
       setPagination(data.pagination);
       setLastUpdated(new Date());
@@ -1293,7 +1326,7 @@ function BackendStatus() {
   const check = useCallback(async () => {
     setStatus('checking');
     try {
-      await axios.get('/health', { timeout: 4000 });
+      await api.get('/health', { timeout: 4000 });
       setStatus('online');
     } catch {
       setStatus('offline');
@@ -1323,9 +1356,17 @@ function BackendStatus() {
 // ROOT COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
 export default function AdminDashboard() {
+  const { signOut } = useAuth();
+  const navigate    = useNavigate();
+
   const [activeTab,    setActiveTab]    = useState('orders');
   const [refreshKey,   setRefreshKey]   = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  async function handleLogout() {
+    await signOut();
+    navigate('/login', { replace: true });
+  }
 
   function handleRefresh() {
     setRefreshKey(k => k + 1);
@@ -1387,6 +1428,31 @@ export default function AdminDashboard() {
             </div>
             <a href="/admin/sales" className="btn btn-gold" style={{ fontSize: '0.8125rem', padding: '0.5rem 0.875rem' }}>📊 Sales</a>
             <a href="/" className="btn btn-ghost" style={{ fontSize: '0.8125rem', padding: '0.5rem 0.875rem' }}>← Storefront</a>
+            <button
+              onClick={handleLogout}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.375rem',
+                padding: '0.5rem 0.875rem', fontSize: '0.8125rem', fontWeight: 600,
+                background: 'transparent',
+                color: 'var(--c-text-muted)',
+                border: '1px solid var(--c-border)',
+                borderRadius: '8px', cursor: 'pointer',
+                transition: 'border-color 0.15s, color 0.15s, background 0.15s',
+                fontFamily: 'var(--font-sans)',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.borderColor = '#EF4444';
+                e.currentTarget.style.color       = '#EF4444';
+                e.currentTarget.style.background  = 'rgba(239,68,68,0.06)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderColor = 'var(--c-border)';
+                e.currentTarget.style.color       = 'var(--c-text-muted)';
+                e.currentTarget.style.background  = 'transparent';
+              }}
+            >
+              ⎋ Logout
+            </button>
           </div>
         </div>
       </header>

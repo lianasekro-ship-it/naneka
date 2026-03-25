@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../lib/api.js';
 import { NanekaLogo } from './Storefront.jsx';
 
 // ─── Always returns a plain string from any axios/fetch error ─────────────────
@@ -94,13 +94,13 @@ export default function OrderTracking() {
     setError(null);
     try {
       // 1. Order details (status, address, customer)
-      const { data: orderData } = await axios.get(`/api/v1/orders/${id}`);
+      const { data: orderData } = await api.get(`/api/v1/orders/${id}`);
       setOrder(orderData);
 
       // 2. Live tracking (only meaningful when out_for_delivery / processing)
       //    Ignore 404/503 — it just means no active delivery yet
       try {
-        const { data: trackData } = await axios.get(`/api/v1/orders/${id}/track`);
+        const { data: trackData } = await api.get(`/api/v1/orders/${id}/track`);
         setTracking(trackData.tracking ?? null);
       } catch {
         setTracking(null);

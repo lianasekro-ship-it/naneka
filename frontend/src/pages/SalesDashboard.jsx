@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import api from '../lib/api.js';
 import { NanekaLogo } from './Storefront.jsx';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -307,9 +307,9 @@ export default function SalesDashboard() {
     setLoading(true);
     setError(null);
     Promise.all([
-      axios.get('/api/v1/admin/sales/summary'),
-      axios.get(`/api/v1/admin/sales/chart?period=${period}`),
-      axios.get('/api/v1/admin/sales/top-products'),
+      api.get('/api/v1/admin/sales/summary'),
+      api.get(`/api/v1/admin/sales/chart?period=${period}`),
+      api.get('/api/v1/admin/sales/top-products'),
     ])
       .then(([s, c, t]) => {
         setSummary(s.data);
@@ -323,7 +323,7 @@ export default function SalesDashboard() {
   const loadChart = useCallback(async (p) => {
     setChartLoad(true);
     try {
-      const { data } = await axios.get(`/api/v1/admin/sales/chart?period=${p}`);
+      const { data } = await api.get(`/api/v1/admin/sales/chart?period=${p}`);
       setChart(data);
     } catch { /* keep old data */ }
     finally { setChartLoad(false); }
