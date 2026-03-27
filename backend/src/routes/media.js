@@ -166,10 +166,24 @@ router.post('/ai-process', upload.single('image'), async (req, res, next) => {
 
     const { buffer, mimetype } = req.file;
 
-    const [cloudinary, gemini] = await Promise.all([
+    // Run both in parallel; Gemini failure is non-fatal — image pipeline still works
+    const [cloudinaryResult, geminiResult] = await Promise.allSettled([
       uploadAndProcess(buffer, mimetype),
       extractProductInfo(buffer, mimetype),
     ]);
+
+    if (cloudinaryResult.status === 'rejected') {
+      throw cloudinaryResult.reason;
+    }
+
+    const cloudinary = cloudinaryResult.value;
+    const gemini = geminiResult.status === 'fulfilled'
+      ? geminiResult.value
+      : { product_name: '', description_en: '', description_sw: '' };
+
+    if (geminiResult.status === 'rejected') {
+      console.warn('[media/ai-process] Gemini unavailable:', geminiResult.reason?.message);
+    }
 
     return res.json({
       processedUrl:   cloudinary.processedUrl,
@@ -178,6 +192,7 @@ router.post('/ai-process', upload.single('image'), async (req, res, next) => {
       product_name:   gemini.product_name,
       description_en: gemini.description_en,
       description_sw: gemini.description_sw,
+      gemini_available: geminiResult.status === 'fulfilled',
     });
   } catch (err) {
     next(err);
