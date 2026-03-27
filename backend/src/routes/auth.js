@@ -76,7 +76,7 @@ router.post('/send-otp', async (req, res, next) => {
     }
 
     // Purge stale rows opportunistically (best-effort, don't fail on error)
-    supabase.rpc('purge_old_otps').catch(() => {});
+    supabase.rpc('purge_old_otps').then(() => {}, () => {});
 
     res.json({ message: 'Code sent' });
   } catch (err) {
