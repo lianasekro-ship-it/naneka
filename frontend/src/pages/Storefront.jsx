@@ -93,7 +93,7 @@ export default function Storefront() {
 
   const buyNow = useCallback((product) => {
     if (!user) {
-      navigate('/login', { state: { from: { pathname: '/' } } });
+      navigate('/sign-in', { state: { from: { pathname: '/' } } });
       return;
     }
     trackViewed(product);
