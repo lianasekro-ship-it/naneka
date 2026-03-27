@@ -32,4 +32,21 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Surface the backend's human-readable error message instead of Axios's generic
+// "Request failed with status code XXX". The backend returns two shapes:
+//   { error: "string message" }            (explicit route errors)
+//   { error: { message: "string" } }       (global errorHandler)
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const d = err.response?.data;
+    const backendMsg =
+      (typeof d?.error === 'string'         ? d.error         : null) ??
+      (typeof d?.error?.message === 'string' ? d.error.message : null) ??
+      (typeof d?.message === 'string'        ? d.message       : null);
+    if (backendMsg) err.message = backendMsg;
+    return Promise.reject(err);
+  },
+);
+
 export default api;

@@ -48,13 +48,17 @@ export function AuthProvider({ children }) {
 
   /** Step 1 — ask backend to generate OTP and deliver it via Beem */
   async function sendOtp(phone) {
-    const { data } = await api.post('/api/v1/auth/send-otp', { phone });
+    const { data } = await api.post('/api/v1/auth/send-otp', { phone }, {
+      headers: { 'Cache-Control': 'no-store, no-cache', Pragma: 'no-cache' },
+    });
     return data;
   }
 
   /** Step 2 — verify OTP on backend; backend returns a signed JWT */
   async function verifyOtp(phone, code) {
-    const { data } = await api.post('/api/v1/auth/verify-otp', { phone, code });
+    const { data } = await api.post('/api/v1/auth/verify-otp', { phone, code }, {
+      headers: { 'Cache-Control': 'no-store, no-cache', Pragma: 'no-cache' },
+    });
     localStorage.setItem(TOKEN_KEY, data.access_token);
     setUser({ id: data.user.id, phone: data.user.phone, role: data.user.role });
   }
