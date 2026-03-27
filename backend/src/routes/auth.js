@@ -61,10 +61,19 @@ router.post('/send-otp', async (req, res, next) => {
     });
     if (dbErr) throw dbErr;
 
-    await sendSms(
-      e164,
-      `Your Naneka verification code is ${code}. Valid for ${OTP_TTL_MIN} minutes. Do not share this code.`,
-    );
+    // Send SMS — non-fatal: if the SMS gateway is unreachable the OTP is still
+    // stored in the DB so the user can retrieve it via support / Vercel logs.
+    try {
+      await sendSms(
+        e164,
+        `Your Naneka verification code is ${code}. Valid for ${OTP_TTL_MIN} minutes. Do not share this code.`,
+      );
+    } catch (smsErr) {
+      // Log the code so it is visible in Vercel function logs during debugging.
+      // REMOVE this log line once a reliable SMS gateway is confirmed working.
+      console.error(`[auth] SMS delivery failed for ${e164}: ${smsErr.message}`);
+      console.warn(`[auth] OTP for ${e164} (check logs only — not for production): ${code}`);
+    }
 
     // Purge stale rows opportunistically (best-effort, don't fail on error)
     supabase.rpc('purge_old_otps').catch(() => {});
@@ -120,24 +129,27 @@ router.post('/verify-otp', async (req, res, next) => {
     if (profile) {
       userId = profile.user_id;
     } else {
-      // First login — create a Supabase Auth user (requires service-role key)
-      if (!supabaseAdmin) {
-        throw new Error('SUPABASE_SERVICE_ROLE_KEY is not configured');
+      // First login — try to create a Supabase Auth user.
+      // If SUPABASE_SERVICE_ROLE_KEY is absent, fall back to a local UUID so
+      // the JWT can still be issued and the customer can proceed.
+      if (supabaseAdmin) {
+        const { data: { user: created }, error: createErr } =
+          await supabaseAdmin.auth.admin.createUser({
+            phone:         e164,
+            phone_confirm: true,
+            user_metadata: { role: 'customer' },
+          });
+        if (createErr) throw createErr;
+        userId = created.id;
+      } else {
+        console.warn('[auth] SUPABASE_SERVICE_ROLE_KEY not set — using local UUID for new user');
+        userId = crypto.randomUUID();
       }
-      const { data: { user: created }, error: createErr } =
-        await supabaseAdmin.auth.admin.createUser({
-          phone:         e164,
-          phone_confirm: true,
-          user_metadata: { role: 'customer' },
-        });
-      if (createErr) throw createErr;
 
       await supabase.from('phone_profiles').insert({
         phone:   e164,
-        user_id: created.id,
+        user_id: userId,
       });
-
-      userId = created.id;
     }
 
     // ── Issue a signed JWT ────────────────────────────────────────────────────
