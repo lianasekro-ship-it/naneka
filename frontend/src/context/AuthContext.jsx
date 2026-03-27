@@ -27,12 +27,22 @@ export function AuthProvider({ children }) {
     if (error) throw error;
   }
 
+  async function sendOtp(phone) {
+    const { error } = await supabase.auth.signInWithOtp({ phone });
+    if (error) throw error;
+  }
+
+  async function verifyOtp(phone, token) {
+    const { error } = await supabase.auth.verifyOtp({ phone, token, type: 'sms' });
+    if (error) throw error;
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signIn, sendOtp, verifyOtp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

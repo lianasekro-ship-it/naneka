@@ -12,7 +12,8 @@ backend/dist/
 .env.local
 .env.*.local
 backend/.env
-# .env.production is intentionally committed (non-secret Vercel build vars)
+frontend/.env
+frontend/.env.*
 
 # Logs
 *.log

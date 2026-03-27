@@ -1,65 +1,35 @@
-import fs from 'fs';
-import jwt from 'jsonwebtoken';
-import { env } from '../config/env.js';
-
-// Keys loaded once at startup.
-// Priority: inline env var content (Vercel) → file path (local dev).
-let publicKey = null;
-try {
-  if (env.JWT_PUBLIC_KEY) {
-    // Inline PEM: replace literal \n with real newlines (common in env var editors)
-    publicKey = env.JWT_PUBLIC_KEY.replace(/\\n/g, '\n');
-  } else if (env.JWT_PUBLIC_KEY_PATH) {
-    publicKey = fs.readFileSync(env.JWT_PUBLIC_KEY_PATH);
-  }
-} catch (err) {
-  console.warn(`[auth] Could not load JWT public key: ${err.message}`);
-  console.warn('[auth] Auth is running in OPEN mode — all requests are permitted. Generate keys before going live.');
-}
+import { supabase } from '../config/supabase.js';
 
 /**
- * Middleware — verifies Bearer JWT on protected routes.
- * Attaches decoded payload to req.user.
- * NOTE: Currently a pass-through (no enforcement) until JWT is fully configured.
+ * Middleware — verifies a Supabase Bearer token on protected routes.
+ * Attaches the Supabase user object to req.user.
  */
-export function authenticate(req, res, next) {
-  // TODO: Implement Bearer token extraction and RS256 verification
-  // 1. Extract token from Authorization header
-  // 2. jwt.verify(token, publicKey, { algorithms: ['RS256'] })
-  // 3. Attach decoded payload to req.user
-  // 4. Call next() or return 401
+export async function authenticate(req, res, next) {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const token = header.slice(7);
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+  req.user = user;
   next();
 }
 
 /**
  * Middleware — restricts route to specific roles.
  * Must be used after authenticate().
+ * Role is read from user_metadata.role (set via Supabase dashboard or admin API).
  * @param {...string} roles  e.g. requireRole('admin', 'staff')
  */
 export function requireRole(...roles) {
   return (req, res, next) => {
-    // TODO: Check req.user.role against allowed roles
-    // Return 403 if not permitted
+    const role = req.user?.user_metadata?.role;
+    if (!role || !roles.includes(role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     next();
   };
-}
-
-/**
- * Generates a signed JWT access token.
- * @param {{ id: string, role: string }} payload
- */
-export function signAccessToken(payload) {
-  // TODO: Load private key and sign with RS256
-  // jwt.sign(payload, privateKey, { algorithm: 'RS256', expiresIn: env.JWT_EXPIRES_IN })
-  throw new Error('signAccessToken: not implemented');
-}
-
-/**
- * Generates a refresh token.
- * Refresh tokens are stored server-side (DB or Redis) to allow rotation and revocation.
- * @param {string} userId
- */
-export function signRefreshToken(userId) {
-  // TODO: Implement refresh token generation and persistence
-  throw new Error('signRefreshToken: not implemented');
 }

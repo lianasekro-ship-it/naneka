@@ -15,6 +15,7 @@ import OrderTracking     from './pages/OrderTracking.jsx';
 import PaymentResult     from './pages/PaymentResult.jsx';
 import OrderConfirmed    from './pages/OrderConfirmed.jsx';
 import Login             from './pages/Login.jsx';
+import CustomerLogin     from './pages/CustomerLogin.jsx';
 import Terms             from './pages/Terms.jsx';
 import Returns           from './pages/Returns.jsx';
 import Privacy           from './pages/Privacy.jsx';
@@ -62,6 +63,7 @@ function AppShell() {
         <Route path="/track"                   element={<OrderTracking />} />
         <Route path="/orders/:orderId/track"   element={<OrderTracking />} />
         <Route path="/login"                   element={<Login />} />
+        <Route path="/sign-in"                 element={<CustomerLogin />} />
         <Route path="/terms"                   element={<Terms />} />
         <Route path="/returns"                 element={<Returns />} />
         <Route path="/privacy"                 element={<Privacy />} />
