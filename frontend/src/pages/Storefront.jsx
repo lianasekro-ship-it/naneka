@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, Fragment } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../lib/api.js';
 import { useCart } from '../context/CartContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 import { PRODUCTS, BEST_SELLERS, NEW_ARRIVALS, BULK_DEALS, MADE_IN_TZ, CATEGORIES } from '../data/products.js';
 import ProductCard from '../components/ProductCard.jsx';
 import MegaSidebar from '../components/MegaSidebar.jsx';
@@ -38,6 +39,7 @@ function resolveSectionProducts(section, hiddenIds) {
 
 export default function Storefront() {
   const { add, setDrawerOpen } = useCart();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [selectedProduct,  setSelectedProduct]  = useState(null);
   const [recentlyViewed,   setRecentlyViewed]   = useState([]);
@@ -90,9 +92,13 @@ export default function Storefront() {
   }, [add, trackViewed, setDrawerOpen]);
 
   const buyNow = useCallback((product) => {
+    if (!user) {
+      navigate('/login', { state: { from: { pathname: '/' } } });
+      return;
+    }
     trackViewed(product);
     setSelectedProduct(product);
-  }, [trackViewed]);
+  }, [user, navigate, trackViewed]);
 
   function scrollTo(id) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
