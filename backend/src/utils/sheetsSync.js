@@ -14,7 +14,7 @@ import axios from 'axios';
 // The hard-coded URL below is a fallback; update it after each GAS re-deploy.
 // To re-deploy: script.google.com → Deploy → New Deployment → Web App (Anyone).
 const HARD_CODED_SHEETS_URL =
-  'https://script.google.com/macros/s/AKfycbxWGkilbCG-v-iKloxmARL92Cze-z3XA13cqX_lS0aautJU5yZTkcv4Nx-R5Hs1vC-vRw/exec';
+  'https://script.google.com/macros/s/AKfycbyw0pUOZwGjqr8vrXfeZOXdNruQcFV6zQREgz6IQDY_X7OU0ug8Tb7_kaRWfzVxpiUKMg/exec';
 
 function getSheetsUrl() {
   const fromEnv = process.env.GOOGLE_SHEETS_URL;
