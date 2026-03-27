@@ -10,8 +10,9 @@
 
 import axios from 'axios';
 
-// Hard-coded working GAS deployment URL — confirmed live 2026-03-26.
-// env var overrides this if set (allows rotation without a redeploy).
+// GAS deployment URL — set GOOGLE_SHEETS_URL in Vercel to override.
+// The hard-coded URL below is a fallback; update it after each GAS re-deploy.
+// To re-deploy: script.google.com → Deploy → New Deployment → Web App (Anyone).
 const HARD_CODED_SHEETS_URL =
   'https://script.google.com/macros/s/AKfycbxWGkilbCG-v-iKloxmARL92Cze-z3XA13cqX_lS0aautJU5yZTkcv4Nx-R5Hs1vC-vRw/exec';
 
@@ -19,6 +20,33 @@ function getSheetsUrl() {
   const fromEnv = process.env.GOOGLE_SHEETS_URL;
   if (fromEnv && fromEnv.startsWith('https://')) return fromEnv;
   return HARD_CODED_SHEETS_URL;
+}
+
+/**
+ * POST to GAS with manual redirect handling.
+ * Google's script.google.com returns a 302 that changes POST→GET, breaking the
+ * payload delivery. We follow the redirect ourselves with a second POST.
+ */
+async function postToGas(url, payload) {
+  const body    = JSON.stringify(payload);
+  const headers = { 'Content-Type': 'text/plain' }; // GAS needs text/plain for postData
+  const opts    = { method: 'POST', headers, body, redirect: 'manual' };
+
+  let res = await fetch(url, opts);
+
+  // Follow one level of redirect manually, reissuing as POST
+  if ((res.status === 301 || res.status === 302 || res.status === 307 || res.status === 308)
+      && res.headers.get('location')) {
+    const redirectUrl = res.headers.get('location');
+    console.log(`[sheetsSync] Following redirect → ${redirectUrl.slice(0, 80)}…`);
+    res = await fetch(redirectUrl, opts);
+  }
+
+  if (!res.ok) {
+    throw new Error(`GAS returned HTTP ${res.status}`);
+  }
+
+  return res.json();
 }
 
 /**
@@ -37,11 +65,7 @@ export async function syncProductToSheets(product) {
   };
 
   try {
-    await axios.post(url, payload, {
-      headers:      { 'Content-Type': 'application/json' },
-      timeout:      12000,
-      maxRedirects: 5,
-    });
+    await postToGas(url, payload);
     console.log(`[sheetsSync] ✓ Product "${payload.name}" synced`);
   } catch (err) {
     console.error('[sheetsSync] ✗ Product sync failed:', err.message);
@@ -81,24 +105,13 @@ export async function syncToSheets(order) {
   console.log(`[sheetsSync] → POST ${url.slice(0, 80)}… payload=${JSON.stringify(payload)}`);
 
   try {
-    const res = await axios.post(url, payload, {
-      headers:      { 'Content-Type': 'application/json' },
-      timeout:      12000,
-      maxRedirects: 5,
-    });
-
-    const body    = res.data;
-    const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
-    console.log(`[sheetsSync] ← GAS (HTTP ${res.status}): ${bodyStr.slice(0, 300)}`);
-
-    if (typeof body === 'object' && body?.success === true) {
+    const body = await postToGas(url, payload);
+    if (body?.success === true) {
       console.log(`[sheetsSync] ✓ Upserted #${payload.orderNumber} → ${payload.status} (action=${body.action})`);
     } else {
-      console.error(`[sheetsSync] ✗ GAS returned unexpected shape — is the Apps Script deployment up to date? Response: ${bodyStr.slice(0, 200)}`);
+      console.error(`[sheetsSync] ✗ GAS unexpected response: ${JSON.stringify(body).slice(0, 200)}`);
     }
   } catch (err) {
-    const status = err.response?.status;
-    const detail = err.response?.data ?? err.message;
-    console.error(`[sheetsSync] ✗ Sync failed (HTTP ${status ?? 'network'}): ${JSON.stringify(detail).slice(0, 300)}`);
+    console.error(`[sheetsSync] ✗ Sync failed — ${err.message}. Re-deploy GAS at script.google.com and update GOOGLE_SHEETS_URL in Vercel.`);
   }
 }

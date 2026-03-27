@@ -39,7 +39,7 @@ function resolveSectionProducts(section, hiddenIds) {
 
 export default function Storefront() {
   const { add, setDrawerOpen } = useCart();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [selectedProduct,  setSelectedProduct]  = useState(null);
   const [recentlyViewed,   setRecentlyViewed]   = useState([]);
@@ -92,13 +92,14 @@ export default function Storefront() {
   }, [add, trackViewed, setDrawerOpen]);
 
   const buyNow = useCallback((product) => {
+    if (authLoading) return; // wait for auth state to resolve
     if (!user) {
       navigate('/sign-in', { state: { from: { pathname: '/' } } });
       return;
     }
     trackViewed(product);
     setSelectedProduct(product);
-  }, [user, navigate, trackViewed]);
+  }, [user, authLoading, navigate, trackViewed]);
 
   function scrollTo(id) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
