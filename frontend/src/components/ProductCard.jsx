@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const DELIVERY_FEE     = 3_500;
-const NANEKA_WHATSAPP  = '255700000000';
+const NANEKA_WHATSAPP  = import.meta.env.VITE_WA_BUSINESS_NUMBER || '255713610774';
 
 function formatTZS(n) { return 'TZS\u00A0' + Number(n).toLocaleString('en-TZ'); }
 function buildWAUrl(name, price) {

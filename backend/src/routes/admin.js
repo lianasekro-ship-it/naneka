@@ -42,7 +42,7 @@ import {
   createSubcategory,
   deleteSubcategory,
 } from '../models/category.js';
-import { syncProductToSheets } from '../utils/sheetsSync.js';
+import { syncProductToSheets, syncToSheets } from '../utils/sheetsSync.js';
 
 const router = Router();
 
@@ -619,6 +619,55 @@ router.get('/waha/groups', async (req, res, next) => {
     });
   } catch (err) {
     return next(createError(502, `Could not reach WAHA at ${wahaBaseUrl}: ${err.message}. Is WAHA running and publicly accessible?`));
+  }
+});
+
+// ─── GET /api/v1/admin/test-sheets ───────────────────────────────────────────
+// Fires a real test upsert to Google Sheets and returns the raw GAS response.
+// Use this to verify the GAS deployment is live and returning our JSON shape.
+router.get('/test-sheets', async (_req, res, next) => {
+  const { env } = await import('../config/env.js');
+  const url = env.GOOGLE_SHEETS_URL;
+  if (!url) {
+    return res.status(500).json({ ok: false, error: 'GOOGLE_SHEETS_URL is not set in environment variables.' });
+  }
+
+  const axios = (await import('axios')).default;
+  const payload = {
+    action: 'upsert',
+    type: 'order',
+    orderNumber: 'DIAG0001',
+    createdAt: new Date().toISOString(),
+    customerName: 'Diagnostic Test',
+    customerPhone: '+255700000000',
+    total: 1,
+    deliveryAddress: 'Sheets Connectivity Test',
+    status: 'pending_payment',
+    lastUpdated: new Date().toISOString(),
+  };
+
+  try {
+    const gasRes = await axios.post(url, payload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 15000,
+      maxRedirects: 5,
+    });
+    const body = gasRes.data;
+    const ok = typeof body === 'object' && body?.success === true;
+    return res.json({
+      ok,
+      httpStatus: gasRes.status,
+      gasResponse: body,
+      urlPrefix: url.slice(0, 60) + '…',
+      warning: ok ? null : 'GAS returned unexpected shape — deployment is stale. Re-deploy the Apps Script.',
+    });
+  } catch (err) {
+    return res.status(502).json({
+      ok: false,
+      error: err.message,
+      httpStatus: err.response?.status ?? 'network',
+      gasResponse: err.response?.data ?? null,
+    });
   }
 });
 

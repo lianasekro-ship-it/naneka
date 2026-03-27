@@ -270,6 +270,7 @@ img { display: block; max-width: 100%; height: auto; object-fit: contain; }
 @keyframes zoomIn       { from { transform: scale(0.96); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
 @keyframes pulse        { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes skeletonPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 
 .modal-handle {
   width: 36px; height: 3px;

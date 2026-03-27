@@ -404,8 +404,8 @@ export async function createOrder(req, res, next) {
       }));
     }
 
-    // 8. Sheets sync (fire-and-forget)
-    syncToSheets({
+    // 8. Sheets sync — must be awaited on Vercel: Lambda freezes on res.json(), killing un-awaited promises
+    await syncToSheets({
       orderNumber:     orderId.slice(0, 8).toUpperCase(),
       createdAt:       orderFlat.created_at,
       customerName:    orderFlat.customer_name,
@@ -531,9 +531,9 @@ export async function updateOrderStatus(req, res, next) {
       return next(createError(404, 'Order not found.'));
     }
 
-    // Sync every status change to Google Sheets
-    syncToSheets({
-      orderNumber:     result.id.slice(0, 8).toUpperCase(),
+    // Sync every status change to Google Sheets — awaited so Vercel doesn't kill the promise early
+    await syncToSheets({
+      orderNumber:     result.order_number ?? result.id.slice(0, 8).toUpperCase(),
       createdAt:       result.created_at,
       customerName:    result.customer_name,
       customerPhone:   result.customer_phone,

@@ -90,14 +90,23 @@ async function sendMessage(chatId, text) {
     text,
   };
 
-  const res = await fetch(url, {
-    method:  'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Api-Key':    env.WAHA_API_KEY,
-    },
-    body: JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method:  'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key':    env.WAHA_API_KEY,
+      },
+      body:   JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     const detail = await res.text().catch(() => '');

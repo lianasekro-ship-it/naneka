@@ -380,7 +380,7 @@ export default function Returns() {
             </div>
           </div>
           <a
-            href="https://wa.me/255700000000"
+            href={`https://wa.me/${import.meta.env.VITE_WA_BUSINESS_NUMBER || '255713610774'}`}
             target="_blank"
             rel="noopener noreferrer"
             style={{

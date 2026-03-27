@@ -1,46 +1,48 @@
 /**
  * sheetsSync.js
  *
- * Fire-and-forget utility that pushes order data to a Google Apps Script
- * web app using UPSERT logic:
- *   - If the orderNumber already exists in the sheet → UPDATE status + lastUpdated only
- *   - If it does not exist → INSERT a new row
+ * Pushes order data to Google Sheets via Apps Script web app.
+ * UPSERT logic: find by orderNumber → update status; not found → insert new row.
  *
- * The Apps Script reads the `action: 'upsert'` field to trigger this behaviour.
- * Failures are logged but never thrown — a Sheets outage must never block an order.
+ * The GAS URL is hard-coded as the primary value so this never silently
+ * breaks due to a missing / stale environment variable.
  */
 
 import axios from 'axios';
-import { env } from '../config/env.js';
 
-const SHEETS_URL = env.GOOGLE_SHEETS_URL;
+// Hard-coded working GAS deployment URL — confirmed live 2026-03-26.
+// env var overrides this if set (allows rotation without a redeploy).
+const HARD_CODED_SHEETS_URL =
+  'https://script.google.com/macros/s/AKfycbxWGkilbCG-v-iKloxmARL92Cze-z3XA13cqX_lS0aautJU5yZTkcv4Nx-R5Hs1vC-vRw/exec';
+
+function getSheetsUrl() {
+  const fromEnv = process.env.GOOGLE_SHEETS_URL;
+  if (fromEnv && fromEnv.startsWith('https://')) return fromEnv;
+  return HARD_CODED_SHEETS_URL;
+}
 
 /**
  * Push a newly created product to Google Sheets.
  */
 export async function syncProductToSheets(product) {
-  if (!SHEETS_URL) {
-    console.warn('[sheetsSync] GOOGLE_SHEETS_URL not set — skipping product sync.');
-    return;
-  }
-
+  const url = getSheetsUrl();
   const payload = {
     type:      'product',
-    id:        product.id,
-    name:      product.name,
-    category:  product.category,
-    price:     product.price,
-    currency:  product.currency,
-    createdAt: product.created_at,
+    id:        product.id        ?? '',
+    name:      product.name      ?? '',
+    category:  product.category  ?? '',
+    price:     product.price     ?? 0,
+    currency:  product.currency  ?? 'TZS',
+    createdAt: product.created_at ?? new Date().toISOString(),
   };
 
   try {
-    await axios.post(SHEETS_URL, payload, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 10000,
+    await axios.post(url, payload, {
+      headers:      { 'Content-Type': 'application/json' },
+      timeout:      12000,
       maxRedirects: 5,
     });
-    console.log(`[sheetsSync] ✓ Synced product "${payload.name}" (${payload.id})`);
+    console.log(`[sheetsSync] ✓ Product "${payload.name}" synced`);
   } catch (err) {
     console.error('[sheetsSync] ✗ Product sync failed:', err.message);
   }
@@ -49,42 +51,51 @@ export async function syncProductToSheets(product) {
 /**
  * Upsert an order row in Google Sheets.
  *
- * Sheet columns (set up by Apps Script on first run):
+ * Sheet columns:
  *   A: Order Number  B: Created At   C: Customer Name  D: Phone
  *   E: Total (TZS)   F: Address      G: Status         H: Last Updated
- *
- * The Apps Script searches column A for `orderNumber`.
- * Match  → updates G (status) + H (lastUpdated) in that row.
- * No match → appends a new row with all fields.
  *
  * @param {{ orderNumber, createdAt, customerName, customerPhone, total, deliveryAddress, status }} order
  */
 export async function syncToSheets(order) {
-  if (!SHEETS_URL) {
-    console.warn('[sheetsSync] GOOGLE_SHEETS_URL not set — order sync skipped. Add it to Vercel env vars.');
-    return;
-  }
+  const url = getSheetsUrl();
 
   const payload = {
-    action:          'upsert',           // Apps Script key — determines insert vs update
+    action:          'upsert',
     type:            'order',
-    orderNumber:     order.orderNumber,
+    orderNumber:     String(order.orderNumber ?? '').trim(),
     createdAt:       order.createdAt       ?? new Date().toISOString(),
-    customerName:    order.customerName,
+    customerName:    order.customerName    ?? '',
     customerPhone:   order.customerPhone   ?? '',
-    total:           order.total,
+    total:           order.total           ?? 0,
     deliveryAddress: order.deliveryAddress ?? '',
-    status:          order.status,
+    status:          order.status          ?? 'unknown',
     lastUpdated:     new Date().toISOString(),
   };
 
+  if (!payload.orderNumber) {
+    console.error('[sheetsSync] ✗ orderNumber is empty — skipping sync');
+    return;
+  }
+
+  console.log(`[sheetsSync] → POST ${url.slice(0, 80)}… payload=${JSON.stringify(payload)}`);
+
   try {
-    const res = await axios.post(SHEETS_URL, payload, {
+    const res = await axios.post(url, payload, {
       headers:      { 'Content-Type': 'application/json' },
       timeout:      12000,
-      maxRedirects: 5,      // GAS /exec redirects once before responding
+      maxRedirects: 5,
     });
-    console.log(`[sheetsSync] ✓ Upserted #${payload.orderNumber} → ${payload.status} (HTTP ${res.status})`);
+
+    const body    = res.data;
+    const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
+    console.log(`[sheetsSync] ← GAS (HTTP ${res.status}): ${bodyStr.slice(0, 300)}`);
+
+    if (typeof body === 'object' && body?.success === true) {
+      console.log(`[sheetsSync] ✓ Upserted #${payload.orderNumber} → ${payload.status} (action=${body.action})`);
+    } else {
+      console.error(`[sheetsSync] ✗ GAS returned unexpected shape — is the Apps Script deployment up to date? Response: ${bodyStr.slice(0, 200)}`);
+    }
   } catch (err) {
     const status = err.response?.status;
     const detail = err.response?.data ?? err.message;

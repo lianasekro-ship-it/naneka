@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useCart } from '../context/CartContext.jsx';
 
 const DELIVERY_FEE = 3_500;
-const WA_NUMBER   = '255700000000'; // TODO: replace with real WhatsApp number
+const WA_NUMBER   = import.meta.env.VITE_WA_BUSINESS_NUMBER || '255713610774';
 
 function formatTZS(n) {
   return 'TZS\u00A0' + Number(n).toLocaleString('en-TZ');

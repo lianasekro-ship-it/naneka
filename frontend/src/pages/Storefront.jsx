@@ -44,6 +44,7 @@ export default function Storefront() {
   const [toast,            setToast]            = useState(null);
   const [dynamicSections,  setDynamicSections]  = useState(null); // null → use static fallback
   const [hiddenIds,        setHiddenIds]        = useState(new Set());
+  const [apiProducts,      setApiProducts]      = useState(null);  // null = loading, [] = empty
   // Shared state for the mobile category drawer — controlled here so that
   // both the SiteHeader hamburger and the MobileBottomNav Categories button
   // open the exact same drawer.
@@ -57,12 +58,23 @@ export default function Storefront() {
 
     api.get('/api/v1/products?limit=500')
       .then(({ data }) => {
-        const hidden = new Set(
-          (data.products ?? []).filter(p => p.is_visible === false).map(p => String(p.id))
-        );
+        const raw = data.products ?? [];
+        // Build hidden-id set for visibility filtering
+        const hidden = new Set(raw.filter(p => p.is_visible === false).map(p => String(p.id)));
         setHiddenIds(hidden);
+        // Normalize API fields → what ProductCard expects
+        const normalized = raw
+          .filter(p => p.is_active !== false)
+          .map(p => ({
+            ...p,
+            // ProductCard reads product.images?.[0] or product.image
+            images: p.gallery?.length ? p.gallery : (p.image_url ? [p.image_url] : []),
+            // ProductCard reads product.stock for stock indicator
+            stock: p.stock_qty ?? 0,
+          }));
+        setApiProducts(normalized);
       })
-      .catch(() => {});
+      .catch(() => { setApiProducts([]); });
   }, []);
 
   const trackViewed = useCallback((product) => {
@@ -161,6 +173,12 @@ export default function Storefront() {
             {recentlyViewed.length > 0 && (
               <ProductCarousel id="recently-viewed" eyebrow="Your History" title="Recently" titleAccent="Viewed" products={recentlyViewed} bg="#F8F6F0" {...cardProps} />
             )}
+
+            <AllProductsGrid
+              products={apiProducts}
+              loading={apiProducts === null}
+              {...cardProps}
+            />
 
             <TrustSection />
           </div>
@@ -828,6 +846,58 @@ function BulkDealCard({ product, onBuyNow, onAddToCart }) {
           title="Add to cart">🛒</button>
       </div>
     </div>
+  );
+}
+
+/* ─── Skeleton Card ───────────────────────────────────────────────────────── */
+function ProductCardSkeleton() {
+  return (
+    <div style={{
+      background: '#fff', borderRadius: 'var(--radius)',
+      border: '1px solid var(--c-border)', overflow: 'hidden',
+      display: 'flex', flexDirection: 'column',
+      animation: 'skeletonPulse 1.4s ease-in-out infinite',
+    }}>
+      <div style={{ height: '185px', background: '#F0EDE4' }} />
+      <div style={{ padding: '1rem 1.125rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+        <div style={{ height: '10px', width: '38%', background: '#EAE6DA', borderRadius: '4px' }} />
+        <div style={{ height: '16px', width: '78%', background: '#EAE6DA', borderRadius: '4px' }} />
+        <div style={{ height: '11px', width: '100%', background: '#EAE6DA', borderRadius: '4px' }} />
+        <div style={{ height: '11px', width: '60%', background: '#EAE6DA', borderRadius: '4px' }} />
+        <div style={{ height: '20px', width: '52%', background: '#EAE6DA', borderRadius: '4px', marginTop: '0.4rem' }} />
+        <div style={{ height: '36px', width: '100%', background: '#EAE6DA', borderRadius: 'var(--radius-sm)', marginTop: '0.5rem' }} />
+      </div>
+    </div>
+  );
+}
+
+/* ─── All Products Grid ────────────────────────────────────────────────────── */
+function AllProductsGrid({ products, loading, onBuyNow, onAddToCart }) {
+  const skeletons = Array.from({ length: 8 });
+  return (
+    <section style={{ padding: 'clamp(2.5rem, 5vw, 4rem) 2rem', background: '#FAFAF7', borderTop: '1px solid var(--c-border)' }}>
+      <div style={{ maxWidth: '1140px', margin: '0 auto' }}>
+        <RowHeader eyebrow="Bidhaa Zetu" title="Bidhaa" titleAccent="Zote" />
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+          gap: '1rem',
+          marginTop: '1.5rem',
+        }}>
+          {loading
+            ? skeletons.map((_, i) => <ProductCardSkeleton key={i} />)
+            : (products ?? []).map(p => (
+                <ProductCard key={p.id} product={p} onBuyNow={onBuyNow} onAddToCart={onAddToCart} />
+              ))
+          }
+        </div>
+        {!loading && (products ?? []).length === 0 && (
+          <p style={{ textAlign: 'center', color: 'var(--c-text-muted)', padding: '3rem 0', fontSize: '0.9rem' }}>
+            Hakuna bidhaa kwa sasa. Rudi baadaye.
+          </p>
+        )}
+      </div>
+    </section>
   );
 }
 
