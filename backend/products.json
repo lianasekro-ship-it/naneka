@@ -1,0 +1,88 @@
+{
+  "version": "1.0",
+  "description": "Naneka product catalog — imported into DB via POST /api/v1/admin/github/products/import",
+  "products": [
+    {
+      "sku": "NAN-SAM-A15-BLK",
+      "name": "Samsung Galaxy A15",
+      "brand": "Samsung",
+      "category_slug": "phones",
+      "subcategory_slug": "android-phones",
+      "price": 445000,
+      "currency": "TZS",
+      "stock_qty": 30,
+      "description": "Samsung Galaxy A15 — ekrani kubwa la 6.5 inch, kamera ya 50MP, betri ya muda mrefu. Inafaa kwa kazi na burudani.",
+      "features": [
+        "Ekrani 6.5\" Super AMOLED",
+        "Kamera 50MP + 5MP + 2MP",
+        "Betri 5000mAh",
+        "RAM 4GB / Hifadhi 128GB",
+        "Android 14"
+      ],
+      "gallery": [],
+      "cost_price": 360000,
+      "tax_rate": 18.00
+    },
+    {
+      "sku": "NAN-SAM-A55-BLU",
+      "name": "Samsung Galaxy A55 5G",
+      "brand": "Samsung",
+      "category_slug": "phones",
+      "subcategory_slug": "android-phones",
+      "price": 895000,
+      "currency": "TZS",
+      "stock_qty": 15,
+      "description": "Samsung Galaxy A55 5G — muundo wa kisasa, 5G, kamera ya kitaalamu ya 50MP na OIS.",
+      "features": [
+        "Ekrani 6.6\" Super AMOLED 120Hz",
+        "Kamera 50MP OIS + 12MP + 5MP",
+        "Betri 5000mAh na fast charge 45W",
+        "RAM 8GB / Hifadhi 256GB",
+        "5G, Android 14, Knox Security"
+      ],
+      "gallery": [],
+      "cost_price": 720000,
+      "tax_rate": 18.00
+    },
+    {
+      "sku": "NAN-AIR-POD-PRO2",
+      "name": "Apple AirPods Pro 2nd Gen",
+      "brand": "Apple",
+      "category_slug": "electronics",
+      "subcategory_slug": "earphones",
+      "price": 520000,
+      "currency": "TZS",
+      "stock_qty": 20,
+      "description": "AirPods Pro (toleo la 2) — sauti bora, noise cancellation ya hali ya juu, na battery inayodumu.",
+      "features": [
+        "Active Noise Cancellation (ANC)",
+        "Transparency mode",
+        "Betri hadi saa 6 (saa 30 na case)",
+        "Inafanya kazi na iPhone, iPad, Mac",
+        "Kinga dhidi ya maji — IPX4"
+      ],
+      "gallery": [],
+      "cost_price": 420000,
+      "tax_rate": 18.00
+    },
+    {
+      "sku": "NAN-HDMI-4K-2M",
+      "name": "Cable HDMI 4K 2m",
+      "brand": "Generic",
+      "category_slug": "electronics",
+      "subcategory_slug": "cables-adapters",
+      "price": 18000,
+      "currency": "TZS",
+      "stock_qty": 100,
+      "description": "Cable HDMI ya ubora wa juu, inasupport 4K@60Hz. Inafaa kwa TV, monitor, na projector.",
+      "features": [
+        "4K Ultra HD 60Hz",
+        "Urefu wa mita 2",
+        "Kinga ya nguvu za magnetic (EMI shielded)"
+      ],
+      "gallery": [],
+      "cost_price": 10000,
+      "tax_rate": 18.00
+    }
+  ]
+}

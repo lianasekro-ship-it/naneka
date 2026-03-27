@@ -22,6 +22,7 @@ import exportRouter      from './routes/export.js';
 import { publicSectionsRouter, adminSectionsRouter } from './routes/siteSections.js';
 import authRouter          from './routes/auth.js';
 import githubRouter        from './routes/github.js';
+import adminGithubRouter   from './routes/adminGithub.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app       = express();
@@ -51,7 +52,8 @@ app.use(express.json());
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.use('/api/v1/auth',         authRouter);
-app.use('/api/v1/github',       githubRouter);
+app.use('/api/v1/github',               githubRouter);
+app.use('/api/v1/admin/github',         adminGithubRouter);
 app.use('/api/v1/orders',       ordersRouter);
 app.use('/api/v1/payments',     paymentsRouter);
 app.use('/api/v1/deliveries',   deliveriesRouter);
