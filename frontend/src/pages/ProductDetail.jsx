@@ -58,6 +58,7 @@ export default function ProductDetail() {
   const navigate     = useNavigate();
   const { add, count, setDrawerOpen } = useCart();
   const { lang }     = useLanguage();
+  const { user }     = useAuth();
 
   const [product,        setProduct]        = useState(() => getProductById(id) ?? null);
   const [apiLoading,     setApiLoading]     = useState(true);
@@ -337,8 +338,18 @@ export default function ProductDetail() {
                 </div>
 
                 {/* Buy Now */}
-                <button onClick={() => setCheckoutMode('checkout')} disabled={!stockOk} className="btn btn-gold btn-full"
-                  style={{ padding: '0.95rem', fontSize: '0.9rem', letterSpacing: '0.04em' }}>
+                <button
+                  onClick={() => {
+                    if (!user) {
+                      navigate('/sign-in', { state: { from: { pathname: `/products/${id}` } } });
+                      return;
+                    }
+                    setCheckoutMode('checkout');
+                  }}
+                  disabled={!stockOk}
+                  className="btn btn-gold btn-full"
+                  style={{ padding: '0.95rem', fontSize: '0.9rem', letterSpacing: '0.04em' }}
+                >
                   Buy Now — {formatTZS(product.price + DELIVERY_FEE)} total →
                 </button>
 

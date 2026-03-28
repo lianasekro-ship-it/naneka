@@ -1,8 +1,9 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 
 import { CartProvider }     from './context/CartContext.jsx';
 import { AuthProvider }     from './context/AuthContext.jsx';
+import { useAuth }          from './context/AuthContext.jsx';
 import { LanguageProvider } from './context/LanguageContext.jsx';
 import ProtectedRoute    from './components/ProtectedRoute.jsx';
 import CartDrawer        from './components/CartDrawer.jsx';
@@ -49,10 +50,21 @@ function NotFound() {
 /* CartDrawer needs a checkout handler — we thread the modal through here */
 function AppShell() {
   const [checkoutProduct, setCheckoutProduct] = useState(null);
+  const { user } = useAuth();
+  const navigate  = useNavigate();
+  const location  = useLocation();
+
+  function handleCheckout(product) {
+    if (!user) {
+      navigate('/sign-in', { state: { from: location } });
+      return;
+    }
+    setCheckoutProduct(product);
+  }
 
   return (
     <>
-      <CartDrawer onCheckout={setCheckoutProduct} />
+      <CartDrawer onCheckout={handleCheckout} />
       <Routes>
         {/* ── Public routes ─────────────────────────────────────────── */}
         <Route path="/"                        element={<Storefront />} />
@@ -89,7 +101,7 @@ function AppShell() {
 
         <Route path="*" element={<NotFound />} />
       </Routes>
-      {checkoutProduct && (
+      {checkoutProduct && user && (
         <CheckoutModal product={checkoutProduct} onClose={() => setCheckoutProduct(null)} />
       )}
     </>

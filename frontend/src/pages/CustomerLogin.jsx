@@ -27,7 +27,7 @@ export default function CustomerLogin() {
   const { user, loading, sendOtp, verifyOtp } = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
-  const from      = location.state?.from?.pathname ?? '/track';
+  const from      = location.state?.from?.pathname ?? '/';
 
   const [step,       setStep]       = useState('phone'); // 'phone' | 'otp'
   const [phone,      setPhone]      = useState('');
