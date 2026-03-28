@@ -394,11 +394,139 @@ function GalleryImageRow({ value, onChange, onRemove, index }) {
   );
 }
 
+// ─── Live Preview Modal ────────────────────────────────────────────────────────
+// Renders the product exactly as a customer sees it on the storefront.
+function ProductPreviewModal({ product, onClose }) {
+  const [lang,     setLang]     = useState('sw');
+  const [imgIndex, setImgIndex] = useState(0);
+
+  const gallery = (product.gallery ?? []).filter(Boolean);
+  const mainImg = gallery[imgIndex] || product.image_url || null;
+  const price   = Number(product.price) || 0;
+  const DELIVERY_FEE = 3_500;
+  const desc = (lang === 'sw' && product.description_sw) ? product.description_sw : (product.description ?? '');
+  const features = (product.features ?? []).filter(Boolean);
+
+  function fmtTZS(n) { return 'TZS\u00A0' + Number(n).toLocaleString('en-TZ'); }
+
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,0.72)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', backdropFilter: 'blur(4px)' }}
+    >
+      <div style={{ background: '#fff', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: 860, maxHeight: '92vh', overflow: 'auto', boxShadow: '0 24px 80px rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column' }}>
+
+        {/* ── Modal header ─────────────────────────────────────────────────── */}
+        <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--c-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FAFAF7', borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', background: 'rgba(197,160,33,0.12)', color: 'var(--c-gold)', border: '1px solid rgba(197,160,33,0.3)', borderRadius: '4px', padding: '0.15rem 0.5rem' }}>Customer Preview</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--c-text-muted)' }}>This is exactly how your customer sees this product</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+            {/* Language toggle */}
+            <button
+              onClick={() => setLang(l => l === 'sw' ? 'en' : 'sw')}
+              style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', fontWeight: 700, border: '1px solid var(--c-border)', borderRadius: '999px', background: lang === 'sw' ? '#0F0F0F' : '#fff', color: lang === 'sw' ? '#fff' : '#0F0F0F', cursor: 'pointer', transition: 'all 0.15s' }}
+            >
+              {lang === 'sw' ? '🇹🇿 Swahili' : '🇬🇧 English'}
+            </button>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.5rem', color: 'var(--c-text-muted)', lineHeight: 1, padding: '0.25rem' }}>×</button>
+          </div>
+        </div>
+
+        {/* ── Product detail layout ─────────────────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem', padding: '2rem', alignItems: 'start' }}>
+
+          {/* Left — images */}
+          <div>
+            <div style={{ aspectRatio: '1', background: '#F5F5F0', borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--c-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.75rem', position: 'relative' }}>
+              {mainImg
+                ? <img src={mainImg} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                : <div style={{ color: 'var(--c-text-dim)', fontSize: '3rem' }}>📷</div>
+              }
+              {gallery.length > 1 && (
+                <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', background: 'rgba(0,0,0,0.45)', color: '#fff', fontSize: '0.65rem', fontWeight: 700, borderRadius: '4px', padding: '0.15rem 0.35rem' }}>{imgIndex + 1}/{gallery.length}</div>
+              )}
+            </div>
+            {gallery.length > 1 && (
+              <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
+                {gallery.map((url, i) => (
+                  <button key={i} onClick={() => setImgIndex(i)} style={{ flexShrink: 0, width: 56, height: 56, padding: 0, border: `2px solid ${i === imgIndex ? 'var(--c-gold)' : 'var(--c-border)'}`, borderRadius: '8px', overflow: 'hidden', cursor: 'pointer', background: '#F5F5F0' }}>
+                    <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Right — info */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {product.brand && <div style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--c-gold)' }}>{product.brand}</div>}
+            <h1 style={{ margin: 0, fontSize: '1.5rem', fontFamily: 'var(--font-serif)', fontWeight: 800, lineHeight: 1.2, color: 'var(--c-text)' }}>{product.name || <span style={{ color: 'var(--c-text-dim)' }}>Product Name</span>}</h1>
+
+            {/* Price block */}
+            <div style={{ background: 'linear-gradient(135deg,rgba(197,160,33,0.07),rgba(197,160,33,0.03))', border: '1px solid rgba(197,160,33,0.2)', borderRadius: 'var(--radius-sm)', padding: '1rem 1.25rem' }}>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--c-text)', fontFamily: 'var(--font-serif)', lineHeight: 1 }}>{price > 0 ? fmtTZS(price) : <span style={{ color: 'var(--c-text-dim)', fontSize: '1.1rem' }}>Price not set</span>}</div>
+              {price > 0 && <div style={{ fontSize: '0.75rem', color: 'var(--c-text-muted)', marginTop: '0.375rem' }}>+{fmtTZS(DELIVERY_FEE)} delivery · Total {fmtTZS(price + DELIVERY_FEE)}</div>}
+            </div>
+
+            {/* Description */}
+            {desc && (
+              <div>
+                <div style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--c-gold)', marginBottom: '0.5rem' }}>
+                  {lang === 'sw' ? 'Maelezo' : 'Description'}
+                </div>
+                <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--c-text-muted)', lineHeight: 1.75 }}>{desc}</p>
+              </div>
+            )}
+            {!desc && (
+              <div style={{ padding: '0.75rem 1rem', background: '#FEF3C7', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', color: '#92700A' }}>
+                No description yet — add EN/SW text in the form above
+              </div>
+            )}
+
+            {/* Features */}
+            {features.length > 0 && (
+              <div>
+                <div style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--c-gold)', marginBottom: '0.5rem' }}>Key Features</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                  {features.map((f, i) => (
+                    <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', fontSize: '0.875rem', color: 'var(--c-text-muted)' }}>
+                      <span style={{ color: 'var(--c-gold)', flexShrink: 0 }}>✓</span>
+                      <span>{f}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* CTA buttons (cosmetic) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', opacity: 0.7, pointerEvents: 'none' }}>
+              <button className="btn btn-gold btn-full" style={{ padding: '0.95rem', fontSize: '0.9rem', letterSpacing: '0.04em' }}>
+                Buy Now — {price > 0 ? fmtTZS(price + DELIVERY_FEE) : '…'} total →
+              </button>
+              <button style={{ width: '100%', padding: '0.8rem', background: 'transparent', border: '1px solid var(--c-border)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontWeight: 600, cursor: 'default', color: 'var(--c-text)' }}>
+                + Add to Cart
+              </button>
+            </div>
+
+            <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--c-text-dim)', textAlign: 'center' }}>
+              Buttons are cosmetic in preview · click the 🇹🇿/🇬🇧 toggle above to switch language
+            </p>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProAddForm({ categories, onSaved }) {
   const [form,       setForm]       = useState(EMPTY_PRO_FORM);
   const [formErr,    setFormErr]    = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [open,       setOpen]       = useState(true);
+  const [previewing, setPreviewing] = useState(false);
 
   // Called by AiPhotoUpload when Cloudinary + Gemini processing completes
   function handleAiResult(data) {
@@ -586,11 +714,22 @@ function ProAddForm({ categories, onSaved }) {
           <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
             <button type="button" onClick={() => { setForm(EMPTY_PRO_FORM); setFormErr(null); }}
               style={{ padding: '0.625rem 1.25rem', fontSize: '0.875rem', fontWeight: 600, borderRadius: 'var(--radius-sm)', border: '1px solid var(--c-border)', background: 'transparent', cursor: 'pointer', color: 'var(--c-text-muted)' }}>Reset</button>
+            <button type="button" onClick={() => setPreviewing(true)}
+              style={{ padding: '0.625rem 1.25rem', fontSize: '0.875rem', fontWeight: 600, borderRadius: 'var(--radius-sm)', border: '1px solid rgba(197,160,33,0.5)', background: 'rgba(197,160,33,0.07)', cursor: 'pointer', color: 'var(--c-gold)' }}>
+              👁 Live Preview
+            </button>
             <button type="submit" className="btn btn-gold" disabled={submitting} style={{ padding: '0.625rem 1.75rem', fontSize: '0.875rem' }}>
               {submitting ? 'Saving…' : 'Save Product'}
             </button>
           </div>
         </form>
+      )}
+
+      {previewing && (
+        <ProductPreviewModal
+          product={{ ...form, price: parseFloat(form.price) || 0, features: form.features.filter(Boolean), gallery: form.gallery.filter(Boolean) }}
+          onClose={() => setPreviewing(false)}
+        />
       )}
     </div>
   );
@@ -604,6 +743,7 @@ function ProductsPanel({ refreshKey = 0 }) {
   const [filterCat,   setFilterCat]   = useState('All');
   const [deletingId,  setDeletingId]  = useState(null);
   const [togglingId,  setTogglingId]  = useState(null);
+  const [previewProd, setPreviewProd] = useState(null);
   // Local visibility overrides: { [productId]: boolean }
   const [visMap,      setVisMap]      = useState({});
 
@@ -750,10 +890,16 @@ function ProductsPanel({ refreshKey = 0 }) {
                         {new Date(p.created_at).toLocaleDateString('en-GB')}
                       </td>
                       <td style={{ ...TD, whiteSpace: 'nowrap' }}>
-                        <button onClick={() => handleDelete(p.id, p.name)} disabled={deletingId === p.id}
-                          style={{ ...btnSm, background: 'var(--c-error-light)', color: 'var(--c-error)', border: '1px solid var(--c-error)' }}>
-                          {deletingId === p.id ? '…' : 'Delete'}
-                        </button>
+                        <div style={{ display: 'flex', gap: '0.375rem' }}>
+                          <button onClick={() => setPreviewProd(p)}
+                            style={{ ...btnSm, background: 'rgba(197,160,33,0.08)', color: 'var(--c-gold)', border: '1px solid rgba(197,160,33,0.35)' }}>
+                            👁 Preview
+                          </button>
+                          <button onClick={() => handleDelete(p.id, p.name)} disabled={deletingId === p.id}
+                            style={{ ...btnSm, background: 'var(--c-error-light)', color: 'var(--c-error)', border: '1px solid var(--c-error)' }}>
+                            {deletingId === p.id ? '…' : 'Delete'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -763,6 +909,13 @@ function ProductsPanel({ refreshKey = 0 }) {
           </div>
         )}
       </div>
+
+      {previewProd && (
+        <ProductPreviewModal
+          product={previewProd}
+          onClose={() => setPreviewProd(null)}
+        />
+      )}
     </div>
   );
 }
