@@ -27,7 +27,7 @@ export async function findDeliveryByOrderId(orderId) {
     .select('*')
     .eq('order_id', orderId)
     .is('completed_at', null)
-    .order('created_at', { ascending: false })
+    .order('started_at', { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) throw error;

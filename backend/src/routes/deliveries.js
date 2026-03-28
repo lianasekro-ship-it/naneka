@@ -88,7 +88,7 @@ router.get('/:orderId', async (req, res, next) => {
         driverName:  delivery.driver_name  ?? null,
         driverPhone: delivery.driver_phone ?? null,
         etaMinutes:  delivery.eta_minutes  ?? null,
-        startedAt:   delivery.created_at,
+        startedAt:   delivery.started_at,
         lastPolled:  delivery.last_polled_at ?? null,
       },
       tracking: coords
