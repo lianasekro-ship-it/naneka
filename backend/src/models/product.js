@@ -42,7 +42,7 @@ async function uniqueSlug(base, excludeId = null) {
 // ─── Base SELECT with joins ───────────────────────────────────────────────────
 const BASE_SELECT = `
   SELECT
-    p.id, p.name, p.slug, p.description, p.price, p.currency,
+    p.id, p.name, p.slug, p.description, p.description_sw, p.price, p.currency,
     p.brand, p.image_url, p.stock_qty, p.is_active,
     p.sku, p.features, p.gallery, p.cost_price, p.tax_rate,
     p.created_at, p.updated_at,

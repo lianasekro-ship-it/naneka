@@ -5,6 +5,7 @@ import { getProductById } from '../data/products.js';
 import { useCart } from '../context/CartContext.jsx';
 import CheckoutModal from '../components/CheckoutModal.jsx';
 import { NanekaLogo } from './Storefront.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 const DELIVERY_FEE = 3_500;
 
@@ -56,6 +57,7 @@ export default function ProductDetail() {
   const { id }       = useParams();
   const navigate     = useNavigate();
   const { add, count, setDrawerOpen } = useCart();
+  const { lang }     = useLanguage();
 
   const [product,        setProduct]        = useState(() => getProductById(id) ?? null);
   const [apiLoading,     setApiLoading]     = useState(true);
@@ -367,12 +369,19 @@ export default function ProductDetail() {
                 )}
 
                 {/* ── Long description ──────────────────────────────────── */}
-                {product.longDescription && (
-                  <div style={{ borderTop: '1px solid var(--c-border)', paddingTop: '1.375rem' }}>
-                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--c-gold)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '0.875rem' }}>About This Product</div>
-                    <p style={{ fontSize: '0.9375rem', color: 'var(--c-text-muted)', lineHeight: 1.8, margin: 0 }}>{product.longDescription}</p>
-                  </div>
-                )}
+                {(() => {
+                  const descSw = product.description_sw;
+                  const descEn = product.longDescription ?? product.description;
+                  const body   = (lang === 'sw' && descSw) ? descSw : descEn;
+                  return body ? (
+                    <div style={{ borderTop: '1px solid var(--c-border)', paddingTop: '1.375rem' }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--c-gold)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '0.875rem' }}>
+                        {lang === 'sw' ? 'Kuhusu Bidhaa Hii' : 'About This Product'}
+                      </div>
+                      <p style={{ fontSize: '0.9375rem', color: 'var(--c-text-muted)', lineHeight: 1.8, margin: 0 }}>{body}</p>
+                    </div>
+                  ) : null;
+                })()}
 
                 {/* ── Reviews ───────────────────────────────────────────── */}
                 <ReviewsSection reviews={reviews} avgRating={avgRating} />
