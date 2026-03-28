@@ -2,7 +2,7 @@ import { Router }  from 'express';
 import crypto       from 'crypto';
 import jwt          from 'jsonwebtoken';
 import { supabase, supabaseAdmin } from '../config/supabase.js';
-import { sendSms }  from '../services/messaging/beem.js';
+import { sendSms }  from '../services/messaging/africastalking.js';
 
 const router         = Router();
 const OTP_TTL_MIN    = 5;

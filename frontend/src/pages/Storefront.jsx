@@ -3,10 +3,12 @@ import { useNavigate, Link } from 'react-router-dom';
 import api from '../lib/api.js';
 import { useCart } from '../context/CartContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useLanguage, LanguageToggle } from '../context/LanguageContext.jsx';
 import { PRODUCTS, BEST_SELLERS, NEW_ARRIVALS, BULK_DEALS, MADE_IN_TZ, CATEGORIES } from '../data/products.js';
 import ProductCard from '../components/ProductCard.jsx';
 import MegaSidebar from '../components/MegaSidebar.jsx';
 import CheckoutModal from '../components/CheckoutModal.jsx';
+import ProductTryOn from '../components/ProductTryOn.jsx';
 
 /* ─── Main Page ───────────────────────────────────────────────────────────── */
 // Resolves which products to show for a dynamic section.
@@ -51,6 +53,7 @@ export default function Storefront() {
   // both the SiteHeader hamburger and the MobileBottomNav Categories button
   // open the exact same drawer.
   const [mobileCatOpen, setMobileCatOpen] = useState(false);
+  const [tryOnProduct,  setTryOnProduct]  = useState(null);
 
   // Fetch active sections and product visibility from API (silently falls back if unavailable)
   useEffect(() => {
@@ -112,7 +115,7 @@ export default function Storefront() {
     navigate(url);
   }
 
-  const cardProps = { onBuyNow: buyNow, onAddToCart: addToCart };
+  const cardProps = { onBuyNow: buyNow, onAddToCart: addToCart, onTryOn: (p) => setTryOnProduct(p) };
   const vis = (arr) => (arr ?? []).filter(p => !hiddenIds.has(String(p.id)));
 
   return (
@@ -212,6 +215,16 @@ export default function Storefront() {
 
       {selectedProduct && (
         <CheckoutModal product={selectedProduct} onClose={() => setSelectedProduct(null)} />
+      )}
+
+      {tryOnProduct && (
+        <ProductTryOn
+          product={tryOnProduct}
+          onClose={() => {
+            setTryOnProduct(null);
+            // Proceed to buy after closing try-on
+          }}
+        />
       )}
     </>
   );
@@ -359,6 +372,7 @@ function LiveSearchBar() {
 function SiteHeader({ onOpenCategories }) {
   const { count, setDrawerOpen } = useCart();
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const { t } = useLanguage();
 
   return (
     <header className="page-header" style={{ borderBottom: '1px solid var(--c-border)' }}>
@@ -392,6 +406,11 @@ function SiteHeader({ onOpenCategories }) {
         >
           <span className="text-xl">🔍</span>
         </button>
+
+        {/* Language toggle — desktop only */}
+        <div className="hidden md:flex shrink-0">
+          <LanguageToggle />
+        </div>
 
         {/* Cart — always visible */}
         <button
@@ -500,7 +519,7 @@ function HeroSection({ onShopNow, onBulk }) {
 }
 
 /* ─── Compact Product Card (for carousels) ───────────────────────────────── */
-function CompactProductCard({ product, onBuyNow, onAddToCart }) {
+function CompactProductCard({ product, onBuyNow, onAddToCart, onTryOn }) {
   const navigate             = useNavigate();
   const [hovered, setHovered] = useState(false);
   const [imgErr,  setImgErr]  = useState(false);
@@ -543,6 +562,23 @@ function CompactProductCard({ product, onBuyNow, onAddToCart }) {
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(26,26,26,0.72)', padding: '0.4rem', textAlign: 'center', fontSize: '0.65rem', fontWeight: 600, color: 'var(--c-gold)', letterSpacing: '0.06em', textTransform: 'uppercase', opacity: hovered ? 1 : 0, transition: 'opacity 0.2s' }}>
           View Details →
         </div>
+        {/* Try It On button — appears on hover */}
+        {onTryOn && (
+          <button
+            onClick={e => { e.stopPropagation(); onTryOn(product); }}
+            style={{
+              position: 'absolute', top: '0.5rem', left: '0.5rem',
+              background: 'rgba(197,160,33,0.92)', color: '#fff',
+              border: 'none', borderRadius: '12px',
+              fontSize: '0.55rem', fontWeight: 700, padding: '0.2rem 0.5rem',
+              cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase',
+              opacity: hovered ? 1 : 0, transition: 'opacity 0.2s',
+              zIndex: 2,
+            }}
+          >
+            ✨ Try
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -621,7 +657,7 @@ function CarouselArrow({ dir, onClick, inv }) {
 }
 
 /* ─── Product Carousel Row ────────────────────────────────────────────────── */
-function ProductCarousel({ id, eyebrow, title, titleAccent, products, onBuyNow, onAddToCart, bg }) {
+function ProductCarousel({ id, eyebrow, title, titleAccent, products, onBuyNow, onAddToCart, onTryOn, bg }) {
   const scrollRef = useRef(null);
   function scroll(dir) {
     scrollRef.current?.scrollBy({ left: dir * 620, behavior: 'smooth' });
@@ -639,7 +675,7 @@ function ProductCarousel({ id, eyebrow, title, titleAccent, products, onBuyNow, 
         ref={scrollRef}
         style={{ display: 'flex', gap: '1rem', overflowX: 'auto', paddingRight: '2rem', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        {(products ?? []).map(p => <CompactProductCard key={p.id} product={p} onBuyNow={onBuyNow} onAddToCart={onAddToCart} />)}
+        {(products ?? []).map(p => <CompactProductCard key={p.id} product={p} onBuyNow={onBuyNow} onAddToCart={onAddToCart} onTryOn={onTryOn} />)}
       </div>
     </section>
   );

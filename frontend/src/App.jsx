@@ -1,8 +1,9 @@
 import { Routes, Route } from 'react-router-dom';
 import { useState } from 'react';
 
-import { CartProvider }  from './context/CartContext.jsx';
-import { AuthProvider }  from './context/AuthContext.jsx';
+import { CartProvider }     from './context/CartContext.jsx';
+import { AuthProvider }     from './context/AuthContext.jsx';
+import { LanguageProvider } from './context/LanguageContext.jsx';
 import ProtectedRoute    from './components/ProtectedRoute.jsx';
 import CartDrawer        from './components/CartDrawer.jsx';
 import CheckoutModal     from './components/CheckoutModal.jsx';
@@ -97,10 +98,12 @@ function AppShell() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <CartProvider>
-        <AppShell />
-      </CartProvider>
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <CartProvider>
+          <AppShell />
+        </CartProvider>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }
