@@ -152,14 +152,15 @@ export async function createProduct(data) {
 
   const result = await query(
     `INSERT INTO products
-       (name, slug, description, price, currency, brand, image_url, stock_qty,
+       (name, slug, description, description_sw, price, currency, brand, image_url, stock_qty,
         category_id, subcategory_id, sku, features, gallery, cost_price, tax_rate)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
      RETURNING *`,
     [
       data.name,
       slug,
-      data.description ?? null,
+      data.description   ?? null,
+      data.descriptionSw ?? null,
       data.price,
       data.currency    ?? 'TZS',
       data.brand       ?? null,
@@ -198,7 +199,8 @@ export async function updateProduct(id, updates) {
     values.push(slug);
   }
   if (updates.price       !== undefined) { fields.push(`price = $${idx++}`);          values.push(updates.price);       }
-  if (updates.description !== undefined) { fields.push(`description = $${idx++}`);    values.push(updates.description); }
+  if (updates.description   !== undefined) { fields.push(`description = $${idx++}`);    values.push(updates.description);   }
+  if (updates.descriptionSw !== undefined) { fields.push(`description_sw = $${idx++}`); values.push(updates.descriptionSw); }
   if (updates.brand       !== undefined) { fields.push(`brand = $${idx++}`);          values.push(updates.brand);       }
   if (updates.imageUrl    !== undefined) { fields.push(`image_url = $${idx++}`);      values.push(updates.imageUrl);    }
   if (updates.stockQty    !== undefined) { fields.push(`stock_qty = $${idx++}`);      values.push(updates.stockQty);    }

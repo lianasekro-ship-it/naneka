@@ -180,7 +180,7 @@ router.post('/products', async (req, res, next) => {
   try {
     const {
       name, price, categorySlug, subcategorySlug,
-      description, brand, imageUrl, stockQty, currency,
+      description, description_sw, brand, imageUrl, stockQty, currency,
       sku, features, gallery, costPrice, taxRate,
     } = req.body;
 
@@ -200,7 +200,7 @@ router.post('/products', async (req, res, next) => {
     }
 
     const product = await createProduct({
-      name, price, description, brand, imageUrl, currency,
+      name, price, description, descriptionSw: description_sw, brand, imageUrl, currency,
       stockQty:      stockQty ?? 0,
       categoryId:    category.id,
       subcategoryId: subcategory.id,
@@ -224,7 +224,7 @@ router.patch('/products/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const {
-      name, price, description, brand, imageUrl, stockQty,
+      name, price, description, description_sw, brand, imageUrl, stockQty,
       categorySlug, subcategorySlug,
       sku, features, gallery, costPrice, taxRate,
     } = req.body;
@@ -252,7 +252,7 @@ router.patch('/products/:id', async (req, res, next) => {
     }
 
     const updated = await updateProduct(id, {
-      name, price, description, brand, imageUrl,
+      name, price, description, descriptionSw: description_sw, brand, imageUrl,
       stockQty, categoryId, subcategoryId, sku,
       features: features !== undefined ? (Array.isArray(features) ? features : []) : undefined,
       gallery:  gallery  !== undefined ? (Array.isArray(gallery)  ? gallery  : []) : undefined,
