@@ -147,7 +147,7 @@ const TD = { padding: '0.875rem 1rem', borderBottom: '1px solid var(--c-border)'
 
 const EMPTY_PRO_FORM = {
   name: '', sku: '', brand: '', price: '', costPrice: '', stockQty: '0',
-  taxRate: '18', description: '', categorySlug: '', subcategorySlug: '',
+  taxRate: '18', description: '', description_sw: '', categorySlug: '', subcategorySlug: '',
   features: [''], gallery: [''],
 };
 
@@ -164,6 +164,188 @@ function FieldInput({ style, ...props }) {
     <input {...props}
       style={{ width: '100%', padding: '0.6rem 0.875rem', border: '1px solid var(--c-border)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', outline: 'none', fontFamily: 'var(--font-sans)', boxSizing: 'border-box', ...style }}
     />
+  );
+}
+
+// ─── AI Photo Upload ──────────────────────────────────────────────────────────
+// Drop or pick a product photo → Cloudinary removes background + adds watermark
+// → Gemini extracts product name and EN/SW descriptions automatically.
+function AiPhotoUpload({ onResult }) {
+  const [state,    setState]   = useState('idle'); // idle | uploading | done | error
+  const [preview,  setPreview] = useState(null);
+  const [result,   setResult]  = useState(null);
+  const [errMsg,   setErrMsg]  = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef(null);
+
+  async function processFile(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+    setState('uploading');
+    setErrMsg(null);
+    setPreview(URL.createObjectURL(file));
+
+    const fd = new FormData();
+    fd.append('image', file);
+
+    try {
+      const { data } = await api.post('/api/v1/media/ai-process', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 60000,
+      });
+      setResult(data);
+      setState('done');
+      onResult(data);
+    } catch (err) {
+      const msg = err.response?.data?.error?.message ?? err.message ?? 'Upload failed';
+      setErrMsg(msg);
+      setState('error');
+    }
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) processFile(file);
+  }
+
+  function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    if (file) processFile(file);
+    e.target.value = '';
+  }
+
+  function reset() {
+    setState('idle');
+    setPreview(null);
+    setResult(null);
+    setErrMsg(null);
+  }
+
+  return (
+    <div style={{
+      border: `2px dashed ${dragOver ? '#C5A021' : state === 'done' ? '#22C55E' : state === 'error' ? 'var(--c-error)' : 'rgba(197,160,33,0.35)'}`,
+      borderRadius: 'var(--radius-lg)',
+      background: dragOver ? 'rgba(197,160,33,0.04)' : state === 'done' ? 'rgba(34,197,94,0.04)' : '#FAFAF8',
+      padding: '1.25rem',
+      transition: 'all 0.2s',
+    }}
+      onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleDrop}
+    >
+      <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '1rem' }}>
+        <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'linear-gradient(135deg,#C5A021,#92700A)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', flexShrink: 0 }}>✨</div>
+        <div>
+          <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--c-text)' }}>AI Photo Upload</div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--c-text-muted)' }}>Upload a product photo → auto bg removal, watermark, AI name &amp; descriptions (EN + SW)</div>
+        </div>
+        {state !== 'idle' && (
+          <button onClick={reset} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--c-text-muted)', cursor: 'pointer', fontSize: '1.125rem', lineHeight: 1, padding: '0.25rem' }}>×</button>
+        )}
+      </div>
+
+      {/* Idle state — drop zone */}
+      {state === 'idle' && (
+        <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📸</div>
+          <p style={{ margin: '0 0 0.875rem', fontSize: '0.8125rem', color: 'var(--c-text-muted)' }}>
+            Drag &amp; drop a product photo here, or
+          </p>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="btn btn-gold"
+            style={{ padding: '0.6rem 1.5rem', fontSize: '0.8125rem' }}
+          >
+            Choose Photo
+          </button>
+          <p style={{ margin: '0.75rem 0 0', fontSize: '0.68rem', color: 'var(--c-text-dim)' }}>
+            JPEG · PNG · WebP · max 20 MB
+          </p>
+        </div>
+      )}
+
+      {/* Uploading state */}
+      {state === 'uploading' && (
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+          {preview && (
+            <img src={preview} alt="preview" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0, opacity: 0.7 }} />
+          )}
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <span className="spinner" style={{ width: '1rem', height: '1rem', color: '#C5A021' }} />
+              <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>Processing with AI…</span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--c-text-muted)', lineHeight: 1.6 }}>
+              <div>⏳ Removing background…</div>
+              <div>🏷️ Adding Naneka watermark…</div>
+              <div>🤖 Extracting name &amp; descriptions…</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Done state */}
+      {state === 'done' && result && (
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+          {/* Processed image */}
+          <div style={{ flexShrink: 0, position: 'relative' }}>
+            <img
+              src={result.processedUrl ?? result.rawUrl}
+              alt="Processed"
+              style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '8px', border: '2px solid #22C55E' }}
+            />
+            <span style={{ position: 'absolute', top: '-6px', right: '-6px', background: '#22C55E', color: '#fff', borderRadius: '50%', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700 }}>✓</span>
+          </div>
+
+          {/* AI Results */}
+          <div style={{ flex: 1, fontSize: '0.8rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.5rem' }}>
+              <span style={{ color: '#22C55E', fontWeight: 700, fontSize: '0.875rem' }}>✓ Form filled automatically</span>
+              {!result.gemini_available && (
+                <span style={{ fontSize: '0.65rem', background: '#FEF3C7', color: '#92700A', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 600 }}>AI descriptions unavailable — fill manually</span>
+              )}
+            </div>
+            {result.product_name && (
+              <div style={{ color: 'var(--c-text-muted)' }}>📦 <strong>{result.product_name}</strong></div>
+            )}
+            {result.description_en && (
+              <div style={{ color: 'var(--c-text-muted)', marginTop: '0.2rem' }}>🇬🇧 {result.description_en.slice(0, 80)}…</div>
+            )}
+            {result.description_sw && (
+              <div style={{ color: 'var(--c-text-muted)', marginTop: '0.2rem' }}>🇹🇿 {result.description_sw.slice(0, 80)}…</div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            style={{ flexShrink: 0, padding: '0.4rem 0.75rem', fontSize: '0.72rem', fontWeight: 700, border: '1px solid var(--c-border)', borderRadius: 'var(--radius-sm)', background: 'transparent', cursor: 'pointer', color: 'var(--c-text-muted)', whiteSpace: 'nowrap' }}
+          >
+            Replace
+          </button>
+        </div>
+      )}
+
+      {/* Error state */}
+      {state === 'error' && (
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <span style={{ fontSize: '1.5rem' }}>⚠️</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--c-error)', marginBottom: '0.25rem' }}>Processing failed</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--c-text-muted)' }}>{errMsg}</div>
+          </div>
+          <button type="button" onClick={() => fileRef.current?.click()}
+            style={{ flexShrink: 0, padding: '0.4rem 0.875rem', fontSize: '0.75rem', fontWeight: 700, border: '1px solid var(--c-border)', borderRadius: 'var(--radius-sm)', background: 'transparent', cursor: 'pointer' }}>
+            Retry
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -218,6 +400,19 @@ function ProAddForm({ categories, onSaved }) {
   const [submitting, setSubmitting] = useState(false);
   const [open,       setOpen]       = useState(true);
 
+  // Called by AiPhotoUpload when Cloudinary + Gemini processing completes
+  function handleAiResult(data) {
+    setForm(f => ({
+      ...f,
+      name:         data.product_name   || f.name,
+      description:  data.description_en || f.description,
+      description_sw: data.description_sw || f.description_sw,
+      gallery:      data.processedUrl
+                      ? [data.processedUrl, ...f.gallery.filter(g => g && g !== '')]
+                      : f.gallery,
+    }));
+  }
+
   const selectedCat = categories.find(c => c.slug === form.categorySlug);
   const subcats     = selectedCat?.subcategories ?? [];
 
@@ -257,7 +452,8 @@ function ProAddForm({ categories, onSaved }) {
         name: form.name.trim(), sku: form.sku.trim() || undefined, brand: form.brand.trim() || undefined,
         price, costPrice: form.costPrice ? parseFloat(form.costPrice) : undefined,
         stockQty: parseInt(form.stockQty, 10) || 0, taxRate: parseFloat(form.taxRate) || 18,
-        description: form.description.trim() || undefined,
+        description:    form.description.trim()    || undefined,
+        description_sw: form.description_sw.trim() || undefined,
         categorySlug: form.categorySlug, subcategorySlug: form.subcategorySlug,
         features: form.features.map(f => f.trim()).filter(Boolean),
         gallery: form.gallery.map(g => g.trim()).filter(Boolean),
@@ -291,6 +487,9 @@ function ProAddForm({ categories, onSaved }) {
 
       {open && (
         <form onSubmit={handleSubmit} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* AI Photo Upload — top of form */}
+          <AiPhotoUpload onResult={handleAiResult} />
+
           {/* Row 1: Name + SKU + Brand */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '0.875rem', alignItems: 'flex-end' }}>
             <div>
@@ -338,11 +537,18 @@ function ProAddForm({ categories, onSaved }) {
             <div><FieldLabel>Tax Rate (%)</FieldLabel><FieldInput type="number" min="0" step="0.01" value={form.taxRate} onChange={e => set('taxRate', e.target.value)} /></div>
           </div>
 
-          {/* Row 4: Long Description */}
-          <div>
-            <FieldLabel>Long Description</FieldLabel>
-            <textarea rows={4} placeholder="Full product description for the detail page…" value={form.description} onChange={e => set('description', e.target.value)}
-              style={{ width: '100%', padding: '0.6rem 0.875rem', border: '1px solid var(--c-border)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', outline: 'none', fontFamily: 'var(--font-sans)', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.55 }} />
+          {/* Row 4: Descriptions (EN + SW) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.875rem' }}>
+            <div>
+              <FieldLabel>🇬🇧 Description (English)</FieldLabel>
+              <textarea rows={4} placeholder="Full product description in English…" value={form.description} onChange={e => set('description', e.target.value)}
+                style={{ width: '100%', padding: '0.6rem 0.875rem', border: '1px solid var(--c-border)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', outline: 'none', fontFamily: 'var(--font-sans)', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.55 }} />
+            </div>
+            <div>
+              <FieldLabel>🇹🇿 Maelezo (Kiswahili)</FieldLabel>
+              <textarea rows={4} placeholder="Maelezo kamili ya bidhaa kwa Kiswahili…" value={form.description_sw} onChange={e => set('description_sw', e.target.value)}
+                style={{ width: '100%', padding: '0.6rem 0.875rem', border: '1px solid var(--c-border)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', outline: 'none', fontFamily: 'var(--font-sans)', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.55 }} />
+            </div>
           </div>
 
           {/* Row 5: Features */}
